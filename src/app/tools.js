@@ -3,6 +3,7 @@ import { initAnnotations } from '../annotations/index.js';
 import { initDrawTool } from '../annotations/drawTool.js';
 import { initGevVoiceCommands } from '../voice/gevRealtime.js';
 import { installScopeMask, destroyScopeMask } from '../scopeMask.js';
+import { startMcpBridgeClient } from '../mcp/bridgeClient.js';
 import {
   installRenderGovernor,
   getRenderGovernorDiagnostics,
@@ -137,5 +138,20 @@ export function createApplicationTools({
       delete window.__gevVoiceCommands;
   });
   debug.voiceCommands = voiceCommands;
-  return { sceneDirector, annotations, voiceCommands };
+  const mcpBridge = startMcpBridgeClient({
+    ...voice,
+    floorServices: operations.surface.groundFloor,
+    annotationResolver: operations.annotationResolver,
+    searchNavigation: operations.searchAndFlyTo,
+    signal,
+    placeSearch,
+    viewer,
+    styleManager,
+    dataManager,
+    sceneDirector,
+    annotations,
+  });
+  defer(() => mcpBridge.stop());
+  debug.mcpBridge = mcpBridge;
+  return { sceneDirector, annotations, voiceCommands, mcpBridge };
 }

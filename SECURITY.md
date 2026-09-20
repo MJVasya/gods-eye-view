@@ -88,6 +88,27 @@ The dev server is a **key broker**: every server-side key above is spendable by 
   loopback only. Use a separately reviewed authentication proxy for remote
   access and keep provider-side quotas as the spend backstop.
 
+
+## Localhost MCP (presentation control)
+
+v0 adds an optional **localhost-only** Model Context Protocol server
+(`tools/mcp-server`) so chat agents can drive camera / layers / scenes in a
+running browser tab. This is a **dedicated control channel**, not an extension
+of the `/api/*` data proxies (those remain data-only and cannot move the camera).
+
+| Control | Default | Notes |
+| --- | --- | --- |
+| Bind | `127.0.0.1` | **Hard-fail** in code if `GEV_MCP_HOST` is `0.0.0.0` / non-loopback — not docs-only |
+| Auth | Bearer `GEV_MCP_TOKEN` | **Default-on.** If unset, a token is generated into gitignored `.gev-mcp-token`. Treat the token as required for any future LAN/multi-user experiment (LAN bind remains unsupported) |
+| CORS | Deny-by-default | Preflight refused; no `Access-Control-Allow-*` |
+| Bridge | Loopback WebSocket `/gev-bridge` | Server refuses non-loopback peers; the browser client (`?gevMcpBridge=` / `__GEV_MCP_BRIDGE_URL__`) **only accepts** `ws(s)://127.0.0.1`, `::1`, or `localhost` URLs and ignores anything else |
+| Secrets | Never via tools | Tools do not read `.env`, key values, or provider credentials; responses redact secret-shaped fields |
+| Presentation profile | Excludes CCTV/ALPR | `set_layer_visibility` / related UI refuse `cctv` and `alpr-cameras` (and `cctv-panel`) by default |
+
+**LAN opt-in warning:** Do **not** set `GEV_MCP_HOST=0.0.0.0`. The process refuses that bind. Exposing MCP beyond loopback would let other machines move the live globe session. There is no supported LAN mode in v0.
+
+Deferred MCP tools (not registered): `control_cctv`, `control_radio`, annotations, `analyst_query`, `next_iss_pass`. See [docs/MCP.md](docs/MCP.md) and [tools/mcp-server/README.md](tools/mcp-server/README.md).
+
 ## Scope & expectations
 
 - The Vite server is a **development/preview** server. If you expose it beyond localhost, put it behind your own auth/proxy and review the bindings (see the threat model above).
