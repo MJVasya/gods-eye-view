@@ -1,5 +1,6 @@
 import { LayerLifecycle } from '../data/lifecycle.js';
 import { LayerPresentation } from './layerPresentation.js';
+import { CyberIntelHud } from './cyberIntelHud.js';
 /** Register the application layer catalog before allowing state restoration. */
 export function createApplicationData({
   scene: { viewer, mapStackController },
@@ -22,6 +23,12 @@ export function createApplicationData({
   });
   const presentation = new LayerPresentation(dataManager);
   defer(() => presentation.destroy());
+  // Tactical stats readout for the Cyber Intel layer. It owns its DOM, hides
+  // itself while the layer is disabled, and re-renders on the layer's update
+  // tick. Mounting is a no-op without a real document (unit-test stubs).
+  const cyberIntelHud = new CyberIntelHud(dataManager);
+  defer(() => cyberIntelHud.destroy());
+  cyberIntelHud.mount();
   onData?.(dataManager);
   if (!catalog?.layers || !catalog?.metadata)
     throw new TypeError('An application layer catalog is required');

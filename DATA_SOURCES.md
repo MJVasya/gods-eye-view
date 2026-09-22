@@ -87,6 +87,20 @@ How to read this:
 
 ---
 
+## Simulated sources (generated locally — not real data)
+
+Some layers render **procedurally generated data** instead of fetched feeds, so the globe works out of the box with no network dependency and no API keys. **Nothing in this section is real data and it must never be presented as such.** Simulated layers always carry honest UI attribution (e.g. "Simulated feed") so viewers can tell at a glance that what they see is synthetic.
+
+| Source | Used for | License / terms | Attribution |
+| ------ | -------- | --------------- | ----------- |
+| **In-repo seeded cyber simulator** (`src/layers/cyber/simulator.js`) | Cyber Intel layer: simulated attack arcs between country hubs | Generated in-repo — **MIT**, same as the code. No third-party data involved | "Simulated feed" — **shown in-app**, required |
+
+### Notes on the simulated sources
+
+- **Cyber Intel feed.** `createSimulatedCyberFeed({ seed = 1337, eventsPerTick = 40 } = {})` returns a `{ getSnapshot({ signal } = {}) }` source (mirroring the layer source interface) that emits up to 40 synthetic threat events per tick between 12 major country hubs (`src` → `dst`, threat type, severity 1–5). Event generation is a pure function of (seed, tick counter) using a seeded mulberry32 PRNG — the same seed always produces the same stream (handy for tests and demos), and it makes **zero network calls, needs no paid APIs, uses no timers, and keeps no global state**. The data is explicitly **not real threat intelligence**: there are no actual attacks, victims, or threat actors here, and the event stream must never be presented, recorded, or cited as evidence of real-world cyber activity. Details: [docs/CYBER_INTEL.md](docs/CYBER_INTEL.md).
+
+---
+
 ## Bundled snapshots
 
 Static datasets shipped in the repo for an out-of-the-box experience. **None are MIT** — each keeps its own license (see the carve-out in [LICENSE](LICENSE)). Each folder also has its own provenance README.

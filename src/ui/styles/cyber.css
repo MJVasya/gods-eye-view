@@ -1,0 +1,215 @@
+/* ── Cyber Intel HUD panel ───────────────────
+   Floating tactical readout for the Cyber Intel layer. Mirrors the
+   intelligence-HUD visual language: monospace, uppercase, bracket corners,
+   cyan glow on a dark translucent field. The SIMULATED FEED badge is
+   deliberately prominent — this data is generated locally and must never be
+   mistaken for real threat intelligence. Pointer-events stay off so the
+   readout never blocks globe interaction. */
+
+#cyber-intel-hud {
+  position: fixed;
+  right: 14px;
+  top: 118px;
+  z-index: 6;
+  width: 248px;
+  padding: 12px 14px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(0, 255, 255, 0.75);
+  text-shadow: 0 0 4px rgba(0, 255, 255, 0.35);
+  background: rgba(2, 10, 14, 0.72);
+  border: 1px solid rgba(0, 255, 255, 0.18);
+  pointer-events: none;
+  user-select: none;
+}
+
+#cyber-intel-hud[hidden] {
+  display: none;
+}
+
+.cyber-hud-corner {
+  position: absolute;
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(0, 255, 255, 0.9);
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
+}
+
+.cyber-hud-tl {
+  top: -4px;
+  left: 4px;
+}
+
+.cyber-hud-tr {
+  top: -4px;
+  right: 4px;
+}
+
+.cyber-hud-bl {
+  bottom: -6px;
+  left: 4px;
+}
+
+.cyber-hud-br {
+  bottom: -6px;
+  right: 4px;
+}
+
+.cyber-hud-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.cyber-hud-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: rgba(0, 255, 255, 0.95);
+}
+
+.cyber-hud-sim {
+  padding: 2px 6px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: #0a0a0f;
+  background: #ffb000;
+  text-shadow: none;
+  box-shadow: 0 0 10px rgba(255, 176, 0, 0.55);
+}
+
+.cyber-hud-counter {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 255, 255, 0.14);
+  padding-bottom: 8px;
+}
+
+.cyber-hud-count-num {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.7);
+}
+
+.cyber-hud-count-label {
+  font-size: 8px;
+  letter-spacing: 1.8px;
+  color: rgba(0, 255, 255, 0.55);
+}
+
+.cyber-hud-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cyber-hud-sec {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  color: rgba(0, 255, 255, 0.5);
+  margin-bottom: 4px;
+  border-bottom: 1px dotted rgba(0, 255, 255, 0.18);
+  padding-bottom: 3px;
+}
+
+.cyber-hud-list {
+  list-style: none;
+}
+
+.cyber-hud-item {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  line-height: 1.7;
+}
+
+.cyber-hud-item-code {
+  font-weight: 700;
+  color: rgba(0, 255, 255, 0.95);
+  min-width: 22px;
+}
+
+.cyber-hud-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(232, 234, 237, 0.75);
+  letter-spacing: 0.6px;
+}
+
+.cyber-hud-item-count {
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.5);
+}
+
+.cyber-hud-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.cyber-hud-type-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 40px;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.7;
+}
+
+.cyber-hud-type-name {
+  font-size: 8px;
+  letter-spacing: 1.2px;
+  color: rgba(0, 255, 255, 0.6);
+}
+
+.cyber-hud-type-bar {
+  display: block;
+  height: 5px;
+  background: rgba(0, 255, 255, 0.1);
+}
+
+.cyber-hud-type-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: rgba(0, 255, 255, 0.75);
+  box-shadow: 0 0 6px rgba(0, 255, 255, 0.5);
+}
+
+.cyber-hud-type-count {
+  text-align: right;
+  color: rgba(232, 234, 237, 0.85);
+}
+
+.cyber-hud-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(0, 255, 255, 0.14);
+  padding-top: 6px;
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: rgba(0, 255, 255, 0.45);
+}
+
+.cyber-hud-error {
+  color: #ff6b6b;
+  text-shadow: 0 0 6px rgba(255, 107, 107, 0.5);
+}
+
+.cyber-hud-error[hidden] {
+  display: none;
+}

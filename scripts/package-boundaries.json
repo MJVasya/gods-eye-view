@@ -1217,6 +1217,7 @@
       "src/app/catalog.js",
       "src/app/constructCatalog.js",
       "src/app/controls.js",
+      "src/app/cyberIntelHud.js",
       "src/app/data.js",
       "src/app/errors.js",
       "src/app/layerPresentation.js",
@@ -1224,6 +1225,7 @@
       "src/app/layers/alprCameras.js",
       "src/app/layers/bikeshare.js",
       "src/app/layers/cctv.js",
+      "src/app/layers/cyber.js",
       "src/app/layers/earthquakes.js",
       "src/app/layers/firms.js",
       "src/app/layers/flights.js",
@@ -1842,6 +1844,7 @@
       "src/app/layers/alprCameras.js",
       "src/app/layers/bikeshare.js",
       "src/app/layers/cctv.js",
+      "src/app/layers/cyber.js",
       "src/app/layers/earthquakes.js",
       "src/app/layers/firms.js",
       "src/app/layers/flights.js",
@@ -2499,6 +2502,7 @@
       "src/sources/reference.js",
       "src/layers/earthquakes/source.js",
       "src/layers/earthquakes/records.js",
+      "src/layers/cyber/simulator.js",
       "src/layers/submarineCables/bundledSource.js"
     ],
     "external": []

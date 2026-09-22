@@ -30,6 +30,25 @@ test('panel presentation places Transit between Street Traffic and Bike Share in
   assert.equal(order.filter(({ id }) => id === 'transit').length, 1);
 });
 
+test('panel presentation places Cyber Intel between Earthquakes and Active Fires in Events', () => {
+  const source = readFileSync(
+    new URL('./layerPanel.js', import.meta.url),
+    'utf8',
+  );
+  const declarations = source.slice(
+    source.indexOf('const PANEL_GROUPS ='),
+    source.indexOf('const PANEL_POSITIONS ='),
+  );
+  const order = JSON.parse(
+    runInNewContext(`${declarations}\nJSON.stringify(PANEL_ORDER)`),
+  );
+  assert.deepEqual(
+    order.filter(({ label }) => label === 'Events').map(({ id }) => id),
+    ['rocket-launches', 'earthquakes', 'cyber', 'local-firms'],
+  );
+  assert.equal(order.filter(({ id }) => id === 'cyber').length, 1);
+});
+
 test('partial feed controls distinguish incomplete records from stale data and outages', async () => {
   const { LayerPanel, layerFeedState } = await import('./layerPanel.js');
   const classes = new Map();
