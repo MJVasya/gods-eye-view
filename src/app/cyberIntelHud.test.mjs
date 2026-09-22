@@ -157,6 +157,7 @@ test('normalizeCyberStats fills the exact getStats contract and clamps top lists
     lastUpdate: null,
     error: '',
     simulated: true,
+    source: '',
   });
   const many = Array.from({ length: 8 }, (_, i) => ({
     code: `C${i}`,
@@ -273,6 +274,34 @@ test('mount is a no-op without a real document', () => {
     const hud = new CyberIntelHud(fakeManager({ enabled: true, stats: {} }));
     hud.mount();
     assert.equal(hud._root, null);
+    hud.destroy();
+  });
+});
+
+test('the attribution badge follows the feed mode and never mixes the labels', () => {
+  withDocument(fakeDocument(), () => {
+    const state = { enabled: true, stats: fakeStats() };
+    const manager = fakeManager(state);
+    const hud = new CyberIntelHud(manager);
+    hud.mount();
+    const badge = findByClass(hud._root, 'cyber-hud-sim');
+    assert.equal(badge.textContent, 'SIMULATED FEED');
+
+    // Live stats: badge flips to the live wording and carries the full
+    // source label in its tooltip — the simulated wording is gone.
+    state.stats = {
+      ...fakeStats(),
+      simulated: false,
+      source: 'CINS Army · blocklist.de · Spamhaus · OpenPhish',
+    };
+    manager.emit({ type: 'data-updated', layerId: 'cyber' });
+    assert.equal(badge.textContent, 'LIVE FEED');
+    assert.equal(badge.title, 'CINS Army · blocklist.de · Spamhaus · OpenPhish');
+
+    // Back to simulated: badge returns to the simulated wording.
+    state.stats = fakeStats();
+    manager.emit({ type: 'data-updated', layerId: 'cyber' });
+    assert.equal(badge.textContent, 'SIMULATED FEED');
     hud.destroy();
   });
 });

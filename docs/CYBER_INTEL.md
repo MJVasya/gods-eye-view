@@ -1,12 +1,19 @@
 # Cyber Intel layer
 
-> ⚠️ **ALL DATA IN THIS LAYER IS SIMULATED.** Every event is generated in-repo
+> ⚠️ **SIMULATED BY DEFAULT.** Every event is generated in-repo
 > by a seeded pseudorandom simulator (`src/layers/cyber/simulator.js`). It is
 > **not real threat intelligence**: there are no actual attacks, victims, or
 > threat actors here. The layer must never present, record, or cite its events
 > as real-world cyber activity. UI attribution always reads **"SIMULATED FEED"**
-> (the layer module sets `source: 'Simulated feed'`), and that wording must
-> stay intact in-app and in screenshots/demos.
+> while the simulated feed is active (the layer module sets
+> `source: 'Simulated feed'`), and that wording must stay intact in-app and in
+> screenshots/demos.
+>
+> An **opt-in live mode** (the "GO LIVE" chip on the layer row) renders real
+> community threat intel through the same-origin `/api/cyber-feed` proxy (see
+> "Live feed" below). Live attribution always reads
+> **"CINS Army · blocklist.de · Spamhaus · OpenPhish"** — never
+> "SIMULATED FEED". The two attributions must never mix.
 
 ## What it visualizes
 
@@ -80,11 +87,128 @@ restrictions). The Cyber Intel layer works out of the box, fully offline, on
 the free tier — and it's the honest way to show a "live attack map" without
 implying real attacks are being tracked.
 
+## Live feed (phase 2) — `/api/cyber-feed`
+
+> Deployed 2026-09-22 on the Pages project (`gods-eye-view`, production URL
+> https://gods-eye-view-df2.pages.dev). The proxy is the Pages Advanced-Mode
+> `_worker.js`; see [docs/DEPLOY.md](DEPLOY.md).
+
+The in-app **live** mode (as opposed to the simulated feed above) fetches
+real, keyless threat-intel data through a same-origin proxy, because the
+upstream feeds don't send CORS headers and one of them rate-limits hard:
+
+```
+browser ──► GET https://gods-eye-view-df2.pages.dev/api/cyber-feed?limit=96
+              (Cloudflare _worker.js → workers/cyber-feed-proxy.js)
+```
+
+### Exact JSON contract
+
+`GET /api/cyber-feed` → `200` with:
+
+```jsonc
+{
+  "live": true,                    // false only on total upstream failure
+  "source": "cins,blocklist,spamhaus,openphish",  // sources that contributed
+  "generated_at": 1730000000000,   // epoch ms the feed was assembled
+  "cache_ttl_s": 60,
+  "events": [
+    {
+      "id": "live-cins-1-12-229-231",       // stable, unique per indicator
+      "src": { "country": "China", "code": "CN", "lat": 23.1181, "lon": 113.2539 },
+      "dst": { "country": "Netherlands", "code": "NL", "lat": 52.3676, "lon": 4.9041 },
+      "type": "intrusion",                  // one of the 6 simulator types
+      "severity": 3,                        // 1–5
+      "ts": 1730000000000,                  // epoch ms
+      "ioc": "1.12.229.231",                // raw indicator (extra, ignored by validator)
+      "ref": "https://cinsscore.com/"       // provenance (extra, ignored by validator)
+    }
+  ]
+}
+```
+
+The event objects are **byte-compatible with the simulator's fixed contract**
+(`src/layers/cyber/records.js`): the client re-validates them with
+`normalizeCyberEvents(payload.events)` (malformed rows are dropped; proxy
+extras like `ioc`/`ref` are stripped), and **falls back to the simulated feed
+whenever `!res.ok || !payload.live`**.
+On total upstream failure the proxy returns `502` with
+`{ live: false, source: "", events: [], error: "<reason>" }`.
+Optional query param: `?limit=N` (1–200, default 96).
+
+### In-app client (`src/layers/cyber/liveFeed.js`)
+
+`createLiveCyberFeed({ proxyUrl = '/api/cyber-feed', fetchImpl, maxEvents = 96 } = {})`
+returns the same `{ getSnapshot({ signal }) }` interface as the simulator, so
+it plugs into `createCyberSource` / `createCyberLayer` unchanged. Every
+network call goes to the same-origin proxy
+(`GET {proxyUrl}?limit={maxEvents}`) — never directly to the upstreams (no
+CORS headers / aggressive rate limits) and never to a GeoIP service (the
+proxy resolves hostile IPs server-side). Any proxy failure — unreachable
+host, non-2xx status, invalid JSON, or a payload with `live: false` /
+missing `events` — throws a descriptive error; the layer catches it and
+falls back (below). All fetch behavior is covered by stubbed-fetch tests
+(`liveFeed.test.mjs`); no test touches the network.
+
+### Opt-in toggle and fallback (implemented in `src/layers/cyber/index.js`)
+
+- **Simulated stays the default.** The live feed only activates through the
+  layer's explicit opt-in toggle: the "GO LIVE" chip on the Cyber Intel layer
+  row (`getRowControls()`), which calls `layer.setFeedMode('live')`. The chip
+  is only exposed when the layer was constructed with a live source
+  (`src/app/layers/cyber.js` wires `createLiveCyberFeed()` in).
+- **Attribution flips with the mode.** `layer.source` / `getStats().source`
+  read `'Simulated feed'` or `'CINS Army · blocklist.de · Spamhaus · OpenPhish'`
+  (`LIVE_FEED_LABEL`); the HUD badge reads `SIMULATED FEED` or `LIVE FEED`
+  (full live label on hover). Switching modes aborts in-flight requests and
+  clears on-screen data, so the two attributions can never mix on screen.
+- **Fallback.** If the live fetch fails, the layer logs a warning, reverts to
+  the simulated feed in the same tick (attribution and chip flip back with
+  it), keeps a one-tick stats note
+  ("Live feed unavailable (…); showing simulated feed."), and renders
+  simulated events. Aborts (disable/destroy/supersede) never trigger the
+  fallback — only genuine proxy failures do.
+
+### Upstream mapping (all keyless, no secrets)
+
+| Feed | Indicator | Cyber `type` | Severity | Endpoint placement |
+|---|---|---|---|---|
+| CINS Army badguys (`cinsscore.com/list/ci-badguys.txt`) | hostile IP | `intrusion` | 3 | **src = real GeoIP** of the IP; dst = hub |
+| blocklist.de all (`lists.blocklist.de/lists/all.txt`) | attacker IP (48 h) | `scan` | 2 | **src = real GeoIP**; dst = hub |
+| Spamhaus DROP v4 (`spamhaus.org/drop/drop_v4.json`) | netblock (representative IP = network address) | `intrusion` | 3 | **src = real GeoIP**; dst = hub |
+| OpenPhish public feed (`openphish.com/feed.txt`) | phishing URL | `phishing` | 3 | src/dst = hubs (see below) |
+
+GeoIP: one `ip-api.com` batch POST (≤100 IPs, free tier 45 req/min) per feed
+assembly; the assembled feed is cached at the edge for 60 s, so upstreams see
+≈1 request/minute per PoP. Per-upstream 9 s timeouts; a dead source contributes
+zero events instead of failing the whole feed.
+
+### Honesty rules for the live feed
+
+- **`src` is real** for IP indicators: the actual GeoIP location of a
+  currently-flagged hostile IP. `dst` (the "victim") is **never known** to any
+  feed — it is a deterministic FNV-1a hash pick from the same 12-hub list the
+  simulator uses (always ≠ src country). Document this in any UI legend.
+- **OpenPhish URLs can't be GeoIP'd** (the batch endpoint does no DNS), so
+  phishing events use hash-picked hubs on both ends; the real phishing URL is
+  preserved in `ioc`.
+- **Severities are per-source defaults** (these feeds are unscored), not
+  measured impact.
+- **abuse.ch was evaluated and rejected**: ThreatFox (`threatfox-api.abuse.ch`)
+  and URLhaus both returned `401 Unauthorized` without an `Auth-Key` as of
+  2026-09-22 — signup-gated, so they violate the keyless/no-secrets rule.
+
 ## Attribution
 
-- In-app layer credit: **`Simulated feed`** (registered by the layer module —
-  see DATA_SOURCES.md "In-app attribution"; also listed in
-  [DATA_SOURCES.md](DATA_SOURCES.md#simulated-sources-generated-locally--not-real-data)).
-- Everywhere the layer is documented or demoed, use the same language:
-  **"SIMULATED FEED"** — never "live", "real-time threat data", or any wording
-  that suggests genuine threat intelligence.
+- **Simulated (default).** In-app layer credit: **`Simulated feed`**
+  (registered by the layer module — see DATA_SOURCES.md "In-app attribution";
+  also listed in [DATA_SOURCES.md](DATA_SOURCES.md#simulated-sources-generated-locally--not-real-data)).
+  Everywhere the simulated layer is documented or demoed, use the same
+  language: **"SIMULATED FEED"** — never "live", "real-time threat data", or
+  any wording that suggests genuine threat intelligence.
+- **Live (opt-in).** In-app layer credit:
+  **`CINS Army · blocklist.de · Spamhaus · OpenPhish`** (`LIVE_FEED_LABEL` in
+  `src/layers/cyber/liveFeed.js`); the HUD badge reads **"LIVE FEED"** with the
+  full label on hover. Listed in [DATA_SOURCES.md](DATA_SOURCES.md) under live
+  sources. Live-mode screenshots must carry the live attribution — never the
+  simulated wording.

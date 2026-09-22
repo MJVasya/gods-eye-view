@@ -2503,6 +2503,7 @@
       "src/layers/earthquakes/source.js",
       "src/layers/earthquakes/records.js",
       "src/layers/cyber/simulator.js",
+      "src/layers/cyber/liveFeed.js",
       "src/layers/submarineCables/bundledSource.js"
     ],
     "external": []

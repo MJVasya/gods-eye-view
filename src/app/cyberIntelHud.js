@@ -65,6 +65,9 @@ export function normalizeCyberStats(stats = {}) {
         : null,
     error: cleanText(input.error),
     simulated: input.simulated !== false,
+    // Active feed attribution (mirrors the layer's source label); the badge
+    // renders the short mode form, the full label rides on `title`.
+    source: cleanText(input.source),
   };
 }
 
@@ -194,6 +197,7 @@ export class CyberIntelHud {
       typeRows,
       updated,
       error,
+      simBadge,
     };
     return root;
   }
@@ -242,6 +246,23 @@ export class CyberIntelHud {
     this._els.countNum.textContent = formatCyberCount(stats.count);
     this._renderTopList(this._els.sourceList, stats.topSources);
     this._renderTopList(this._els.destinationList, stats.topDestinations);
+    // Attribution badge follows the feed mode exactly: simulated and live
+    // wording must never mix. The full live label rides on `title`.
+    const live = !stats.simulated;
+    const badge = this._els.simBadge;
+    if (badge) {
+      const label = live ? 'LIVE FEED' : 'SIMULATED FEED';
+      if (badge.textContent !== label) badge.textContent = label;
+      badge.title = live
+        ? stats.source || 'Live threat-intel feed'
+        : 'Simulated feed — generated locally, not real threat intelligence';
+      if (typeof badge.setAttribute === 'function') {
+        badge.setAttribute(
+          'aria-label',
+          live ? 'Live threat-intel feed' : 'Simulated feed',
+        );
+      }
+    }
     const total = THREAT_TYPES.reduce(
       (sum, { key }) => sum + stats.byType[key],
       0,

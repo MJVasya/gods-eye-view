@@ -1,0 +1,12 @@
+# Standalone deploy config for the cyber-feed proxy Worker.
+# The primary deploy path is the Pages project (see docs/DEPLOY.md), where
+# `_worker.js` (Advanced Mode) serves both the SPA and /api/cyber-feed from
+# the same domain. This file exists for the alternate path: deploying the
+# proxy as its own Worker (e.g. `wrangler deploy`), then wiring a route for
+# /api/cyber-feed on a custom domain.
+#
+# No bindings, no secrets — upstream APIs are keyless.
+
+name = "cyber-feed-proxy"
+main = "workers/cyber-feed-proxy.js"
+compatibility_date = "2026-09-01"

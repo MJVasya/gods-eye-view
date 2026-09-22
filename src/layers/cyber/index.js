@@ -10,13 +10,26 @@ import {
   threatColor,
 } from './model.js';
 import { createCyberEntities, selectRenderCohort } from './rendering.js';
+import { LIVE_FEED_LABEL } from './liveFeed.js';
 export * from './model.js';
 export { createCyberSource } from './source.js';
 
+/** In-app attribution while the simulated feed is active (the default). */
+const SIMULATED_FEED_LABEL = 'Simulated feed';
+
 /** Own one cyber-threat display and its refresh lifecycle. */
-export function createCyberLayer({ source, overlayHost } = {}) {
+export function createCyberLayer({
+  source,
+  overlayHost,
+  liveSource = null,
+} = {}) {
   if (typeof source?.getSnapshot !== 'function')
     throw new TypeError('Cyber layer requires a snapshot source');
+  if (liveSource != null && typeof liveSource?.getSnapshot !== 'function') {
+    throw new TypeError(
+      'Cyber live source must expose getSnapshot({ signal })',
+    );
+  }
   if (!overlayHost) throw new TypeError('Cyber layer requires an overlay host');
   let _viewer = null;
   let _request = null;
@@ -28,12 +41,43 @@ export function createCyberLayer({ source, overlayHost } = {}) {
   let _lastUpdate = null;
   let _lastError = null;
   let _enabled = false;
+  // Feed mode: 'simulated' is always the default; 'live' (real community
+  // threat intel via the same-origin proxy) only activates through an
+  // explicit user toggle (setFeedMode).
+  let _feedMode = 'simulated';
+  let _activeSource = source;
+  let _rowControlsListener = null;
+
+  const notifyRowControls = () => {
+    try {
+      _rowControlsListener?.();
+    } catch {
+      /* listener removal/notification is best effort */
+    }
+  };
+
+  /** Drop in-flight and on-screen data when the feed changes, so simulated
+   *  arcs are never shown under the live label (or vice versa). */
+  function resetFeedState() {
+    _request?.abort();
+    _request = null;
+    _dataSource?.entities.removeAll();
+    overlayHost.clearSource(CYBER_OVERLAY_SOURCE_ID);
+    _count = 0;
+    _byType = emptyByType();
+    _topSources = [];
+    _topDestinations = [];
+    _lastUpdate = null;
+    _lastError = null;
+  }
 
   const layer = {
     id: 'cyber',
     name: 'Cyber Intel',
     icon: '🛡️',
-    source: 'Simulated feed',
+    // Mutable: setFeedMode swaps this between the simulated and live labels.
+    // The layer panel prefers stats.source, which mirrors this value.
+    source: SIMULATED_FEED_LABEL,
     updateInterval: 5000,
 
     init(viewer) {
@@ -75,11 +119,10 @@ export function createCyberLayer({ source, overlayHost } = {}) {
       _request?.abort();
       const request = new AbortController();
       _request = request;
-      try {
-        const rows = await source.getSnapshot({ signal: request.signal });
-        if (request.signal.aborted || _request !== request || !_enabled)
-          return false;
 
+      // Publish one fetched snapshot to the globe entities, the overlay
+      // host, and the HUD stats.
+      const publish = (rows) => {
         // Belt-and-braces dedupe: entity ids must be unique within the
         // data source even if a custom source skips normalization.
         const seen = new Set();
@@ -130,10 +173,53 @@ export function createCyberLayer({ source, overlayHost } = {}) {
         _lastUpdate = nowMs;
         _lastError = null;
         console.log(`[Data:Cyber] Updated: ${_count} attacks`);
+      };
+
+      try {
+        const rows = await _activeSource.getSnapshot({
+          signal: request.signal,
+        });
+        if (request.signal.aborted || _request !== request || !_enabled)
+          return false;
+        publish(rows);
         return true;
       } catch (e) {
         if (request.signal.aborted || _request !== request || !_enabled)
           return false;
+        if (_feedMode === 'live') {
+          // Documented live-feed contract: fall back to the simulated feed
+          // whenever the proxy is unreachable or reports live:false. The
+          // mode switch flips attribution (and the toggle chip) back to
+          // simulated, so simulated arcs are never presented as live intel.
+          const reason = e?.message || 'Cyber source unavailable';
+          console.warn(
+            `[Data:Cyber] Live feed failed (${reason}); falling back to simulated feed.`,
+          );
+          layer.setFeedMode('simulated');
+          // The mode switch aborted `request`; retry once with the
+          // simulated source on a fresh controller.
+          const retry = new AbortController();
+          _request = retry;
+          try {
+            const rows = await _activeSource.getSnapshot({
+              signal: retry.signal,
+            });
+            if (retry.signal.aborted || _request !== retry || !_enabled)
+              return false;
+            publish(rows);
+            // Keep the fallback note until the next successful tick.
+            _lastError = `Live feed unavailable (${reason}); showing simulated feed.`;
+            return true;
+          } catch (retryError) {
+            if (retry.signal.aborted || _request !== retry || !_enabled)
+              return false;
+            console.warn('[Data:Cyber] Fetch error:', retryError);
+            _lastError = retryError?.message || 'Cyber source unavailable';
+            return false;
+          } finally {
+            if (_request === retry) _request = null;
+          }
+        }
         console.warn('[Data:Cyber] Fetch error:', e);
         _lastError = e?.message || 'Cyber source unavailable';
         return false;
@@ -213,9 +299,81 @@ export function createCyberLayer({ source, overlayHost } = {}) {
         topDestinations: _topDestinations.map((entry) => ({ ...entry })),
         lastUpdate: _lastUpdate,
         error: _lastError,
-        simulated: true,
+        simulated: _feedMode === 'simulated',
+        feedMode: _feedMode,
+        source: layer.source,
       };
     },
+
+    /**
+     * Switch the threat-intel feed. 'simulated' (default) renders the
+     * in-repo seeded simulator; 'live' renders real community threat intel
+     * (CINS Army, blocklist.de, Spamhaus, OpenPhish) through the same-origin
+     * proxy. Live mode is strictly opt-in — nothing calls
+     * this except the layer's own UI toggle. Switching clears in-flight and
+     * on-screen data so the two attributions can never mix on screen.
+     * @param {'simulated'|'live'} mode
+     */
+    setFeedMode(mode) {
+      if (mode !== 'simulated' && mode !== 'live') {
+        throw new TypeError(`Unknown cyber feed mode: ${mode}`);
+      }
+      if (mode === 'live' && !liveSource) {
+        throw new Error('Live cyber feed is not configured for this layer');
+      }
+      if (mode === _feedMode) return mode;
+      _feedMode = mode;
+      _activeSource = mode === 'live' ? liveSource : source;
+      layer.source = mode === 'live' ? LIVE_FEED_LABEL : SIMULATED_FEED_LABEL;
+      resetFeedState();
+      notifyRowControls();
+      console.log(`[Data:Cyber] Feed mode: ${mode} (${layer.source})`);
+      return mode;
+    },
+
+    /** Current feed mode: 'simulated' (default) or 'live'. */
+    getFeedMode() {
+      return _feedMode;
+    },
+
+    ...(liveSource
+      ? {
+          /**
+           * Row chip for the opt-in live-feed toggle. Rendered only when the
+           * layer was constructed with a live source; the panel re-reads
+           * this descriptor on every click, so a stale row can never apply
+           * an inverted toggle.
+           */
+          getRowControls() {
+            const live = _feedMode === 'live';
+            return {
+              chips: [
+                {
+                  id: 'cyber-feed-mode',
+                  label: live ? 'LIVE ●' : 'GO LIVE',
+                  title: live
+                    ? `Live threat intel — ${LIVE_FEED_LABEL}. Click to return to the simulated feed.`
+                    : 'Opt in to the live threat-intel feed (real IOCs via the same-origin proxy). The simulated feed stays the default.',
+                  active: live,
+                  state: live ? 'active' : 'idle',
+                  onClick: () => layer.setFeedMode(live ? 'simulated' : 'live'),
+                },
+              ],
+              legend: [],
+            };
+          },
+
+          /**
+           * Install the panel's row re-render callback so the toggle chip
+           * repaints immediately when the feed mode changes.
+           * @param {(() => void)|null} listener
+           */
+          setRowControlsListener(listener) {
+            _rowControlsListener =
+              typeof listener === 'function' ? listener : null;
+          },
+        }
+      : {}),
   };
   return layer;
 }

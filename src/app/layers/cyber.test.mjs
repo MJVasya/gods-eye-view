@@ -27,3 +27,18 @@ test('the application wrapper builds a catalog-compatible cyber layer from its s
   // the shared overlay host) to a factory that returns the cyber layer.
   assert.equal(layer.id, 'cyber');
 });
+
+test('the application wrapper wires the opt-in live feed source', async (t) => {
+  const wrapper = await loadWrapper(t);
+  if (!wrapper) return;
+  const layer = wrapper.createApplicationCyber({
+    source: { getSnapshot: async () => [] },
+  });
+  // Simulated stays the default; the live feed is constructed but inactive.
+  assert.equal(layer.getFeedMode(), 'simulated');
+  assert.equal(layer.source, 'Simulated feed');
+  const controls = layer.getRowControls();
+  assert.equal(controls.chips.length, 1);
+  assert.equal(controls.chips[0].id, 'cyber-feed-mode');
+  assert.equal(controls.chips[0].label, 'GO LIVE');
+});

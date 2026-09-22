@@ -26,6 +26,7 @@ export async function resolve(specifier, context, nextResolve) {
 );
 
 const { createCyberLayer, createCyberSource } = await import('./index.js');
+const { LIVE_FEED_LABEL } = await import('./liveFeed.js');
 
 const endpoint = (code, country, lat, lon) => ({ code, country, lat, lon });
 const attack = (id, overrides = {}) => ({
@@ -38,7 +39,7 @@ const attack = (id, overrides = {}) => ({
   ...overrides,
 });
 
-function harness(feedImpl) {
+function harness(feedImpl, { liveSource = null } = {}) {
   const sources = [];
   const events = [];
   const viewer = {
@@ -51,19 +52,23 @@ function harness(feedImpl) {
       },
     },
   };
+  const clears = [];
   const layer = createCyberLayer({
     source: createCyberSource({ feed: feedImpl }),
+    liveSource,
     overlayHost: {
       setEntries(...args) {
         events.push(args);
       },
       setVisible() {},
-      clearSource() {},
+      clearSource(sourceId) {
+        clears.push(sourceId);
+      },
     },
   });
   layer.init(viewer);
   layer.enable(viewer);
-  return { layer, viewer, sources, events };
+  return { layer, viewer, sources, events, clears };
 }
 
 const emptyStats = () => ({
@@ -74,6 +79,8 @@ const emptyStats = () => ({
   lastUpdate: null,
   error: null,
   simulated: true,
+  feedMode: 'simulated',
+  source: 'Simulated feed',
 });
 
 test('constructor rejects a missing source, bad source, or missing overlay host', () => {
@@ -299,4 +306,226 @@ test('source passes the abort signal through to the feed', async () => {
   const controller = new AbortController();
   await source.getSnapshot({ signal: controller.signal });
   assert.equal(seen, controller.signal);
+});
+
+/* ------------------------------------------------------------------ */
+/* Live feed opt-in (workstream 1): simulated stays the default; the   */
+/* live feed only activates through setFeedMode, and attributions      */
+/* never mix.                                                         */
+/* ------------------------------------------------------------------ */
+
+const liveAttack = attack('live-1', {
+  src: endpoint('NL', 'Netherlands', 52.4, 4.9),
+  type: 'c2',
+});
+const makeLiveSource = () =>
+  createCyberSource({ feed: { getSnapshot: async () => [liveAttack] } });
+
+test('feed mode defaults to simulated with simulated attribution', () => {
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [] },
+    { liveSource: makeLiveSource() },
+  );
+  assert.equal(layer.getFeedMode(), 'simulated');
+  assert.equal(layer.source, 'Simulated feed');
+  assert.deepEqual(layer.getStats(), emptyStats());
+  layer.destroy(viewer);
+});
+
+test('setFeedMode rejects unknown modes and unconfigured live feeds', () => {
+  const { layer, viewer } = harness({ getSnapshot: async () => [] });
+  assert.throws(() => layer.setFeedMode('real'), /Unknown cyber feed mode/);
+  assert.throws(() => layer.setFeedMode('live'), /not configured/);
+  assert.equal(layer.getRowControls, undefined);
+  const live = harness({ getSnapshot: async () => [] }, { liveSource: makeLiveSource() });
+  assert.equal(live.layer.setFeedMode('live'), 'live');
+  assert.equal(live.layer.setFeedMode('live'), 'live'); // idempotent
+  live.layer.destroy(live.viewer);
+  layer.destroy(viewer);
+});
+
+test('setFeedMode toggles live on and off with clean attribution', async () => {
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    { liveSource: makeLiveSource() },
+  );
+  await layer.update(viewer);
+  assert.equal(layer.getStats().count, 1);
+  assert.equal(layer.getStats().simulated, true);
+
+  layer.setFeedMode('live');
+  assert.equal(layer.getFeedMode(), 'live');
+  assert.equal(layer.source, LIVE_FEED_LABEL);
+  // Prior simulated data is cleared immediately — never shown under live.
+  const liveStats = layer.getStats();
+  assert.equal(liveStats.count, 0);
+  assert.equal(liveStats.simulated, false);
+  assert.equal(liveStats.feedMode, 'live');
+  assert.equal(liveStats.source, LIVE_FEED_LABEL);
+
+  await layer.update(viewer);
+  assert.equal(layer.getStats().count, 1);
+  assert.equal(layer.getStats().simulated, false);
+  assert.equal(layer.source, LIVE_FEED_LABEL);
+
+  layer.setFeedMode('simulated');
+  assert.equal(layer.getFeedMode(), 'simulated');
+  assert.equal(layer.source, 'Simulated feed');
+  assert.equal(layer.getStats().count, 0);
+  assert.equal(layer.getStats().simulated, true);
+  assert.equal(layer.getStats().source, 'Simulated feed');
+  await layer.update(viewer);
+  assert.equal(layer.getStats().count, 1);
+  assert.equal(layer.getStats().simulated, true);
+  layer.destroy(viewer);
+});
+
+test('switching feed mode clears prior feed data before the next update', async () => {
+  const { layer, viewer, clears } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    { liveSource: makeLiveSource() },
+  );
+  await layer.update(viewer);
+  assert.equal(layer.getStats().count, 1);
+  layer.setFeedMode('live');
+  assert.deepEqual(clears, ['cyber']);
+  assert.equal(layer.getStats().count, 0);
+  assert.equal(layer.getStats().error, null);
+  assert.equal(layer.getStats().lastUpdate, null);
+  layer.destroy(viewer);
+});
+
+test('update in live mode renders live events with live attribution', async () => {
+  const { layer, viewer, events } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    { liveSource: makeLiveSource() },
+  );
+  layer.setFeedMode('live');
+  assert.equal(await layer.update(viewer), true);
+  const stats = layer.getStats();
+  assert.equal(stats.count, 1);
+  assert.equal(stats.simulated, false);
+  assert.equal(stats.feedMode, 'live');
+  assert.equal(stats.source, LIVE_FEED_LABEL);
+  assert.deepEqual(stats.topSources, [
+    { code: 'NL', country: 'Netherlands', count: 1 },
+  ]);
+  assert.equal(events.length, 1);
+  assert.equal(events[0][0], 'cyber');
+  assert.equal(layer.getAnalystRecords()[0].id, 'live-1');
+  layer.destroy(viewer);
+});
+
+test('getRowControls exposes the opt-in toggle chip with a live descriptor per read', () => {
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [] },
+    { liveSource: makeLiveSource() },
+  );
+  let controls = layer.getRowControls();
+  assert.equal(controls.chips.length, 1);
+  const chip = controls.chips[0];
+  assert.equal(chip.id, 'cyber-feed-mode');
+  assert.equal(chip.label, 'GO LIVE');
+  assert.equal(chip.active, false);
+  assert.ok(chip.title.length > 0);
+
+  chip.onClick();
+  assert.equal(layer.getFeedMode(), 'live');
+  // The panel re-reads the descriptor on click, so a stale chip can never
+  // apply an inverted toggle.
+  controls = layer.getRowControls();
+  assert.equal(controls.chips[0].label, 'LIVE ●');
+  assert.equal(controls.chips[0].active, true);
+  controls.chips[0].onClick();
+  assert.equal(layer.getFeedMode(), 'simulated');
+  assert.equal(layer.getRowControls().chips[0].label, 'GO LIVE');
+  layer.destroy(viewer);
+});
+
+test('row-controls listener is notified when the feed mode changes', () => {
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [] },
+    { liveSource: makeLiveSource() },
+  );
+  let notified = 0;
+  layer.setRowControlsListener(() => {
+    notified += 1;
+  });
+  layer.setFeedMode('live');
+  assert.equal(notified, 1);
+  layer.setFeedMode('simulated');
+  assert.equal(notified, 2);
+  layer.setRowControlsListener(null); // safe removal
+  layer.setFeedMode('live');
+  assert.equal(notified, 2);
+  layer.destroy(viewer);
+});
+
+test('live proxy failure falls back to simulated with a visible note', async () => {
+  const failingLive = createCyberSource({
+    feed: {
+      getSnapshot: async () => {
+        throw new Error('proxy 502');
+      },
+    },
+  });
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    { liveSource: failingLive },
+  );
+  let notified = 0;
+  layer.setRowControlsListener(() => {
+    notified += 1;
+  });
+  layer.setFeedMode('live');
+  assert.equal(layer.getFeedMode(), 'live');
+
+  // The live fetch fails; the layer reverts to simulated in the same tick.
+  assert.equal(await layer.update(viewer), true);
+  assert.equal(layer.getFeedMode(), 'simulated');
+  assert.equal(layer.source, 'Simulated feed');
+  const stats = layer.getStats();
+  assert.equal(stats.count, 1);
+  assert.equal(stats.simulated, true);
+  assert.equal(stats.source, 'Simulated feed');
+  assert.match(stats.error, /Live feed unavailable.*proxy 502/);
+  assert.match(stats.error, /showing simulated feed/);
+  // The toggle chip was notified so it repaints back to GO LIVE.
+  assert.ok(notified >= 1);
+  assert.equal(layer.getRowControls().chips[0].label, 'GO LIVE');
+
+  // The note clears on the next successful tick, like other feed errors.
+  assert.equal(await layer.update(viewer), true);
+  assert.equal(layer.getStats().error, null);
+  layer.destroy(viewer);
+});
+
+test('abort during a live fetch does not trigger the simulated fallback', async () => {
+  let signal;
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    {
+      liveSource: createCyberSource({
+        feed: {
+          getSnapshot({ signal: feedSignal }) {
+            signal = feedSignal;
+            return new Promise((_, reject) => {
+              feedSignal.addEventListener('abort', () => {
+                reject(new DOMException('aborted', 'AbortError'));
+              });
+            });
+          },
+        },
+      }),
+    },
+  );
+  layer.setFeedMode('live');
+  const pending = layer.update(viewer);
+  layer.disable(viewer);
+  assert.equal(signal.aborted, true);
+  assert.equal(await pending, false);
+  // Still in live mode: the abort was a lifecycle event, not a feed failure.
+  assert.equal(layer.getFeedMode(), 'live');
+  assert.equal(layer.source, LIVE_FEED_LABEL);
+  layer.destroy(viewer);
 });
