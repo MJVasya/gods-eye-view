@@ -8,8 +8,9 @@
  *
  * For Direct Upload deploys this file is bundled (esbuild) and uploaded as
  * the `_worker.bundle` field of the deployment-create call — see
- * scripts/pages-direct-upload.py. For git-connected Pages projects, place
- * the bundled output at the root of the build output directory instead.
+ * scripts/pages-direct-upload.py. For git-connected Pages projects,
+ * `npm run build` bundles it to `dist/_worker.js` automatically
+ * (the `build:worker` step).
  */
 import { handleCyberFeedRequest } from './workers/cyber-feed-proxy.js';
 import { handleCctvRequest } from './workers/cctv-proxy.js';
