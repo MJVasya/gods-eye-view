@@ -1,16 +1,19 @@
 # Deploying the Cyber Intel app to Cloudflare Pages
 
 > Status (2026-09-22): **deployed and verified.** All free tier, no secrets.
+> Custom domain **https://godseye.digishield.org** bound 2026-09-22 (proxied
+> CNAME → `gods-eye-view-df2.pages.dev`, cert auto-issued).
 
 ## What is live
 
 | Item | Value |
 |---|---|
 | Pages project | `gods-eye-view` (account `f9ed887c50c448dcd30081d653c39d13`) |
-| Production URL | **https://gods-eye-view-df2.pages.dev** |
+| Production URL | **https://godseye.digishield.org** |
+| Platform URL | https://gods-eye-view-df2.pages.dev (permanent; cannot be removed — it is the CNAME target the custom domain resolves through) |
 | Latest deployment | https://b5126117.gods-eye-view-df2.pages.dev |
 | Production branch | `cyber-layer` |
-| Proxy endpoint | **https://gods-eye-view-df2.pages.dev/api/cyber-feed** |
+| Proxy endpoint | **https://godseye.digishield.org/api/cyber-feed** |
 
 ⚠️ The bare `gods-eye-view.pages.dev` subdomain belongs to a *different*
 Cloudflare account's project — Cloudflare auto-suffixed ours with `-df2`.
@@ -22,7 +25,9 @@ Cloudflare Pages **Advanced Mode**: a single `_worker.js` (repo root) handles
 every request — `/api/cyber-feed*` goes to the threat-feed proxy
 (`workers/cyber-feed-proxy.js`), everything else is served from the static
 build via the Pages-provided `ASSETS` binding. One deployment, same origin,
-no CORS problem, no custom domain needed.
+no CORS problem. The public face is the custom domain
+`godseye.digishield.org`; the `*.pages.dev` URL stays as the platform's
+CNAME target and cannot be deleted.
 
 ```
 browser ──► https://gods-eye-view-df2.pages.dev/
