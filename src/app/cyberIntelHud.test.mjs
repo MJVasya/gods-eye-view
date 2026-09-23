@@ -305,3 +305,24 @@ test('the attribution badge follows the feed mode and never mixes the labels', (
     hud.destroy();
   });
 });
+
+test('the panel aria-label follows the feed mode', () => {
+  withDocument(fakeDocument(), () => {
+    const state = { enabled: true, stats: fakeStats() };
+    const manager = fakeManager(state);
+    const hud = new CyberIntelHud(manager);
+    hud.mount();
+    assert.equal(
+      hud._root._attrs['aria-label'],
+      'Cyber Intel statistics — simulated feed',
+    );
+
+    state.stats = { ...fakeStats(), simulated: false, source: 'live source' };
+    manager.emit({ type: 'data-updated', layerId: 'cyber' });
+    assert.equal(
+      hud._root._attrs['aria-label'],
+      'Cyber Intel statistics — live threat-intel feed',
+    );
+    hud.destroy();
+  });
+});

@@ -212,3 +212,54 @@ zero events instead of failing the whole feed.
   full label on hover. Listed in [DATA_SOURCES.md](DATA_SOURCES.md) under live
   sources. Live-mode screenshots must carry the live attribution — never the
   simulated wording.
+
+## Click-to-inspect (phase 3b) — attack-source intel panel
+
+Clicking an attack **source marker** (the small threat-colored point at the
+arc's origin) — or the arc itself — opens a floating **location-intel panel**
+(`src/ui/cyberIntelPanel.js`, styles appended to
+`src/ui/styles/cyber.css` under `/* phase-3b intel panel */`). Clicking
+empty space, the × button, or pressing Escape dismisses it. `LEFT_CLICK`
+only fires on non-drag clicks, so globe rotate/zoom are unaffected.
+
+The panel shows:
+
+- **Attribution badge** — `SIMULATED FEED` (amber) or `LIVE FEED` (cyan),
+  derived only from the feed mode captured with the event when it was
+  published (`layer.getCyberEvent(id)`); simulated and live attributions
+  can never mix, and the retained records reset on every feed switch.
+- **IP** — the live indicator (`ioc`: the hostile IP, or the phishing URL
+  for OpenPhish rows); the literal word `simulated` for simulated events.
+- **Country, city, region, lat/lon, ISP, org, ASN** — GeoIP enrichment from
+  the proxy's `ip-api.com` batch call (`city`, `regionName`, `isp`, `org`,
+  `as` → `city/region/isp/org/asn` on the src endpoint, passed through
+  `normalizeCyberEvents()`). Simulated hub sources carry no enrichment, so
+  those rows honestly read **"n/a"** — the panel never invents data.
+- **Threat type + severity.**
+- **Map tabs** — "Street View" (default) and "Satellite", rendered as
+  keyless Google embeds (`output=svembed` / `output=embed`, no API key):
+  `https://maps.google.com/maps?q=&layer=c&cbll=LAT,LON&output=svembed`
+  and `https://maps.google.com/maps?q=LAT,LON&z=17&t=k&output=embed`.
+  Keyless coverage detection is unreliable, so instead of faking a "no
+  coverage" state the panel captions that the Satellite tab is one click
+  away.
+
+Plumbing notes:
+
+- `workers/cyber-feed-proxy.js` `geoipBatch()` requests the extra ip-api.com
+  fields; enrichment is best-effort (GeoIP failure still falls back to
+  hub endpoints).
+- `src/layers/cyber/records.js` `normalizeEndpoint()` passes through
+  optional `city/region/isp/org/asn` (trimmed strings; absent/malformed →
+  omitted), and `normalizeEvent()` passes through optional `ioc`/`ref`
+  provenance strings for the panel.
+- `src/layers/cyber/rendering.js` adds `createSourceMarkerEntity()` (id
+  `cyber:src:<id>`, static point graphics) and `resolveCyberPickEventId()`;
+  `createCyberEntities()` now emits 3 entities per record (arc + source
+  marker + destination marker) with the `CYBER_MAX_ARCS` cohort cap
+  unchanged.
+- `src/layers/cyber/index.js` retains last-published rows (`id → record`
+  plus feed mode and source label) exposed as `getCyberEvent(id)`, and
+  wires the `ScreenSpaceEventHandler` in `init()` (destroyed in
+  `destroy()`; skipped when the viewer has no canvas, e.g. headless
+  tests).

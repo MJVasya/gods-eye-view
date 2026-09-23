@@ -9,8 +9,16 @@ import {
   selectCyberOverlayCohort,
   threatColor,
 } from './model.js';
-import { createCyberEntities, selectRenderCohort } from './rendering.js';
+import {
+  createCyberEntities,
+  selectRenderCohort,
+  resolveCyberPickEventId,
+} from './rendering.js';
 import { LIVE_FEED_LABEL } from './liveFeed.js';
+import {
+  openCyberIntelPanel,
+  closeCyberIntelPanel,
+} from '../../ui/cyberIntelPanel.js';
 export * from './model.js';
 export { createCyberSource } from './source.js';
 
@@ -47,6 +55,14 @@ export function createCyberLayer({
   let _feedMode = 'simulated';
   let _activeSource = source;
   let _rowControlsListener = null;
+  // Retained attack records from the last published tick (id → { record,
+  // feedMode, sourceLabel }), backing getCyberEvent() for the click-to-
+  // inspect intel panel. Reset on every feed switch so attribution can
+  // never mix.
+  const _records = new Map();
+  // LEFT_CLICK pick handler for source markers/arcs; installed in init()
+  // only when the viewer exposes a canvas (headless tests skip it).
+  let _clickHandler = null;
 
   const notifyRowControls = () => {
     try {
@@ -63,12 +79,53 @@ export function createCyberLayer({
     _request = null;
     _dataSource?.entities.removeAll();
     overlayHost.clearSource(CYBER_OVERLAY_SOURCE_ID);
+    _records.clear();
+    // A panel opened for the previous feed would show stale data under the
+    // new attribution — dismiss it with the feed.
+    closeCyberIntelPanel();
     _count = 0;
     _byType = emptyByType();
     _topSources = [];
     _topDestinations = [];
     _lastUpdate = null;
     _lastError = null;
+  }
+
+  /**
+   * Install the LEFT_CLICK pick handler on the viewer's canvas. LEFT_CLICK
+   * only fires on non-drag clicks, so globe rotate/zoom are unaffected.
+   * Source markers (and arcs) open the intel panel; empty space dismisses
+   * it. Skipped when the viewer has no canvas (headless tests).
+   */
+  function installPickHandler() {
+    const canvas = _viewer?.scene?.canvas;
+    if (!canvas || typeof Cesium.ScreenSpaceEventHandler !== 'function') return;
+    if (_clickHandler) return;
+    _clickHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+    _clickHandler.setInputAction((click) => {
+      try {
+        const picked = _viewer?.scene?.pick?.(click?.position);
+        const eventId = resolveCyberPickEventId(picked);
+        if (eventId) {
+          const entry = layer.getCyberEvent(eventId);
+          if (entry) openCyberIntelPanel(entry);
+          else closeCyberIntelPanel();
+        } else {
+          closeCyberIntelPanel();
+        }
+      } catch (error) {
+        console.warn('[Data:Cyber] Pick handling failed:', error);
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  }
+
+  function removePickHandler() {
+    try {
+      _clickHandler?.destroy();
+    } catch {
+      /* handler teardown is best effort */
+    }
+    _clickHandler = null;
   }
 
   const layer = {
@@ -94,6 +151,7 @@ export function createCyberLayer({
       _lastError = null;
       _enabled = false;
       overlayHost.setVisible(CYBER_OVERLAY_SOURCE_ID, false);
+      installPickHandler();
       console.log('[Data:Cyber] Initialized');
     },
 
@@ -170,6 +228,18 @@ export function createCyberLayer({
         _byType = aggregateByType(deduped);
         _topSources = topEndpoints(deduped, 'src');
         _topDestinations = topEndpoints(deduped, 'dst');
+        // Retain the published rows for click-to-inspect, capturing the
+        // feed mode and its attribution label at publish time so the intel
+        // panel can never mix simulated and live attributions.
+        _records.clear();
+        for (const row of deduped) {
+          _records.set(row.id, {
+            id: row.id,
+            record: row,
+            feedMode: _feedMode,
+            sourceLabel: layer.source,
+          });
+        }
         _lastUpdate = nowMs;
         _lastError = null;
         console.log(`[Data:Cyber] Updated: ${_count} attacks`);
@@ -231,6 +301,9 @@ export function createCyberLayer({
     destroy(viewer = _viewer) {
       _request?.abort();
       _request = null;
+      removePickHandler();
+      closeCyberIntelPanel();
+      _records.clear();
       _viewer = null;
       _enabled = false;
       overlayHost.clearSource(CYBER_OVERLAY_SOURCE_ID);
@@ -334,6 +407,29 @@ export function createCyberLayer({
     /** Current feed mode: 'simulated' (default) or 'live'. */
     getFeedMode() {
       return _feedMode;
+    },
+
+    /**
+     * Retained event for the click-to-inspect intel panel: the normalized
+     * record plus the feed mode and attribution label captured when it was
+     * published. Returns a copy so panel reads can't mutate layer state;
+     * null when the id isn't in the last published tick.
+     * @param {string} id Event id (the suffix of `cyber:src:<id>`).
+     * @returns {{ id: string, record: object, feedMode: string, sourceLabel: string }|null}
+     */
+    getCyberEvent(id) {
+      const entry = _records.get(id);
+      if (!entry) return null;
+      return {
+        id: entry.id,
+        feedMode: entry.feedMode,
+        sourceLabel: entry.sourceLabel,
+        record: {
+          ...entry.record,
+          src: { ...entry.record.src },
+          dst: { ...entry.record.dst },
+        },
+      };
     },
 
     ...(liveSource

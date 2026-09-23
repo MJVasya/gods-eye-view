@@ -179,35 +179,25 @@ export class LayerPanel {
 
       const count = document.createElement('span');
       count.className = 'data-count';
-      count.textContent = this._layerCountText(layer.stats);
+      this._syncCount(count, layer);
 
       const toggle = document.createElement('button');
       toggle.type = 'button';
       toggle.className = `data-toggle-btn${layer.enabled ? ' active' : ''}`;
       this._syncToggleButton(toggle, layer);
-      this._bind(toggle, 'click', async () => {
-        // Native `disabled` immediately evicts keyboard focus in Chromium. Keep
-        // the lifecycle control focusable while it is busy, and enforce the
-        // same single-flight interaction contract through ARIA instead.
-        if (
-          this._destroyed ||
-          this._generation !== generation ||
-          toggle.getAttribute('aria-disabled') === 'true'
-        )
-          return;
-        toggle.setAttribute('aria-disabled', 'true');
-        toggle.setAttribute('aria-busy', 'true');
-        try {
-          await this.setEnabled(layer.id, !this.isEnabled(layer.id), {
-            origin: 'user',
-          });
-        } catch (error) {
-          console.warn(`[Data] ${layer.id} toggle error:`, error);
-        } finally {
-          const current = this.getAll().find(({ id }) => id === layer.id);
-          if (!this._destroyed && current && this._generation === generation)
-            this._syncToggleButton(toggle, current);
-        }
+      const toggleLayer = () => {
+        void this._toggleLayerEnabled(layer, toggle, generation);
+      };
+      this._bind(toggle, 'click', toggleLayer);
+      // The icon, name and count read as the row's label, so the whole top
+      // row toggles the layer — a far larger click target than the status
+      // pill alone. The pill owns its own click; the guard keeps one press
+      // from running the transition twice. Keyboard users keep the pill,
+      // which stays the single tab stop.
+      topRow.style.cursor = 'pointer';
+      this._bind(topRow, 'click', (event) => {
+        if (event.target?.closest?.('.data-toggle-btn')) return;
+        toggleLayer();
       });
 
       right.appendChild(count);
@@ -272,11 +262,59 @@ export class LayerPanel {
     }
   }
 
+  /**
+   * Run one user-initiated enable/disable transition for a layer.
+   *
+   * Shared by the status pill and the row's top area: native `disabled`
+   * immediately evicts keyboard focus in Chromium, so the lifecycle control
+   * stays focusable while it is busy and the single-flight interaction
+   * contract is enforced through ARIA instead.
+   */
+  async _toggleLayerEnabled(layer, toggle, generation) {
+    if (
+      this._destroyed ||
+      this._generation !== generation ||
+      toggle.getAttribute('aria-disabled') === 'true'
+    )
+      return;
+    toggle.setAttribute('aria-disabled', 'true');
+    toggle.setAttribute('aria-busy', 'true');
+    try {
+      await this.setEnabled(layer.id, !this.isEnabled(layer.id), {
+        origin: 'user',
+      });
+    } catch (error) {
+      console.warn(`[Data] ${layer.id} toggle error:`, error);
+    } finally {
+      const current = this.getAll().find(({ id }) => id === layer.id);
+      if (!this._destroyed && current && this._generation === generation)
+        this._syncToggleButton(toggle, current);
+    }
+  }
+
   /** Qualify a loaded count when it does not mean items currently on screen. */
   _layerCountText(stats) {
     if (typeof stats.countLabel === 'string' && stats.countLabel.trim())
       return stats.countLabel;
     return stats.count ? this._formatCount(stats.count) : '—';
+  }
+
+  /** Write the row's count pill, with the exact count behind a rounded one. */
+  _syncCount(count, layer) {
+    if (!count) return;
+    const stats = layer.stats || {};
+    const text = this._layerCountText(stats);
+    if (count.textContent !== text) count.textContent = text;
+    if (Number.isFinite(stats.count) && stats.count > 0) {
+      count.title = `${panelLabel(layer)} — ${stats.count.toLocaleString('en-US')} loaded`;
+    } else if (
+      typeof stats.countLabel === 'string' &&
+      stats.countLabel.trim()
+    ) {
+      count.title = `${panelLabel(layer)} — loaded`;
+    } else {
+      count.title = '';
+    }
   }
 
   /**
@@ -444,9 +482,7 @@ export class LayerPanel {
       }
 
       const count = row.querySelector('.data-count');
-      if (count) {
-        count.textContent = this._layerCountText(layer.stats);
-      }
+      this._syncCount(count, layer);
 
       const meta = row.querySelector('.data-toggle-meta');
       if (meta) {
@@ -569,12 +605,23 @@ export class LayerPanel {
     // Name the missing key on the control itself: a row reading KEY REQUIRED
     // without saying WHICH key leaves a dead control and no next step. Empty
     // when the layer needs no key, or already has one.
-    button.title = keyGuidance;
+    //
+    // Otherwise the pill carries an actionable tooltip: its two-letter state
+    // text (ON, OFF, STALE…) is compact by design, so hovering says what a
+    // click will do.
+    const label = panelLabel(layer);
+    button.title = keyGuidance
+      ? `${label}: ${button.textContent}. ${keyGuidance}`
+      : transitioning
+        ? `${label} — ${layer.lifecycleState}...`
+        : uncertain
+          ? `${label} — state uncertain; click to re-sync`
+          : `${label} — ${button.textContent}; click to ${layer.enabled ? 'disable' : 'enable'} this layer`;
     button.setAttribute(
       'aria-label',
       keyGuidance
-        ? `${panelLabel(layer)}: ${button.textContent}. ${keyGuidance}`
-        : `${panelLabel(layer)}: ${button.textContent}`,
+        ? `${label}: ${button.textContent}. ${keyGuidance}`
+        : `${label}: ${button.textContent}`,
     );
   }
 

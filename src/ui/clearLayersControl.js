@@ -2,7 +2,12 @@
 export function bindClearLayersControl(button, clear) {
   let destroyed = false;
   const click = () => {
-    if (!destroyed) void clear();
+    if (destroyed) return;
+    // The caller marks the button busy through setBusy while its transaction
+    // runs; honor that ARIA state so a second press mid-clear cannot stack
+    // another run on top of the first.
+    if (button?.getAttribute?.('aria-disabled') === 'true') return;
+    void clear();
   };
   button?.addEventListener('click', click);
   return {

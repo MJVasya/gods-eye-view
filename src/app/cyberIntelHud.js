@@ -127,6 +127,7 @@ export class CyberIntelHud {
     const head = this._el(doc, 'div', 'cyber-hud-head');
     const title = this._el(doc, 'span', 'cyber-hud-title');
     title.textContent = 'CYBER INTEL';
+    title.title = 'Cyber threat activity for the active feed';
     const simBadge = this._el(doc, 'span', 'cyber-hud-sim');
     simBadge.textContent = 'SIMULATED FEED';
     head.appendChild(title);
@@ -134,6 +135,7 @@ export class CyberIntelHud {
     root.appendChild(head);
 
     const counter = this._el(doc, 'div', 'cyber-hud-counter');
+    counter.title = 'Attacks tracked in the current feed window';
     const countNum = this._el(doc, 'span', 'cyber-hud-count-num');
     countNum.textContent = '0';
     const countLabel = this._el(doc, 'span', 'cyber-hud-count-label');
@@ -144,13 +146,14 @@ export class CyberIntelHud {
 
     const columns = this._el(doc, 'div', 'cyber-hud-columns');
     const lists = {};
-    for (const [key, heading] of [
-      ['sources', 'TOP SOURCES'],
-      ['destinations', 'TOP TARGETS'],
+    for (const [key, heading, hint] of [
+      ['sources', 'TOP SOURCES', 'Countries originating the most attacks'],
+      ['destinations', 'TOP TARGETS', 'Countries receiving the most attacks'],
     ]) {
       const col = this._el(doc, 'div', 'cyber-hud-col');
       const section = this._el(doc, 'div', 'cyber-hud-sec');
       section.textContent = heading;
+      section.title = hint;
       const list = this._el(doc, 'ol', 'cyber-hud-list');
       col.appendChild(section);
       col.appendChild(list);
@@ -161,6 +164,7 @@ export class CyberIntelHud {
 
     const mixSec = this._el(doc, 'div', 'cyber-hud-sec');
     mixSec.textContent = 'THREAT MIX';
+    mixSec.title = 'Threat-type breakdown of the tracked attacks';
     root.appendChild(mixSec);
     const mix = this._el(doc, 'div', 'cyber-hud-mix');
     const typeRows = new Map();
@@ -177,13 +181,14 @@ export class CyberIntelHud {
       row.appendChild(bar);
       row.appendChild(count);
       mix.appendChild(row);
-      typeRows.set(key, { fill, count });
+      typeRows.set(key, { row, fill, count, label });
     }
     root.appendChild(mix);
 
     const foot = this._el(doc, 'div', 'cyber-hud-foot');
     const updated = this._el(doc, 'span', 'cyber-hud-updated');
     updated.textContent = 'UPD --:--:--Z';
+    updated.title = 'Time of the last feed update (UTC)';
     const error = this._el(doc, 'span', 'cyber-hud-error');
     error.hidden = true;
     foot.appendChild(updated);
@@ -209,6 +214,7 @@ export class CyberIntelHud {
       // Build with explicit child nodes so values are textContent-escaped.
       const item = doc.createElement('li');
       item.className = 'cyber-hud-item';
+      item.title = `${country || 'UNKNOWN'} — ${formatCyberCount(count)} attacks`;
       const codeNode = doc.createElement('span');
       codeNode.className = 'cyber-hud-item-code';
       codeNode.textContent = code || '--';
@@ -263,6 +269,16 @@ export class CyberIntelHud {
         );
       }
     }
+    // The panel's own label must follow the mode too: a screen reader should
+    // never hear "simulated feed" while live IOCs are on screen.
+    if (typeof this._root.setAttribute === 'function') {
+      this._root.setAttribute(
+        'aria-label',
+        live
+          ? 'Cyber Intel statistics — live threat-intel feed'
+          : 'Cyber Intel statistics — simulated feed',
+      );
+    }
     const total = THREAT_TYPES.reduce(
       (sum, { key }) => sum + stats.byType[key],
       0,
@@ -272,6 +288,7 @@ export class CyberIntelHud {
       if (!row) continue;
       const value = stats.byType[key];
       row.count.textContent = formatCyberCount(value);
+      row.row.title = `${row.label}: ${formatCyberCount(value)} attacks`;
       if (row.fill && typeof row.fill === 'object' && 'style' in row.fill) {
         row.fill.style.width = total > 0 ? `${(value / total) * 100}%` : '0%';
       }
@@ -279,7 +296,10 @@ export class CyberIntelHud {
     this._els.updated.textContent = `UPD ${formatCyberTimestamp(stats.lastUpdate)}`;
     const hasError = Boolean(stats.error);
     this._els.error.hidden = !hasError;
-    if (hasError) this._els.error.textContent = `ERR ${stats.error}`;
+    if (hasError) {
+      this._els.error.textContent = `ERR ${stats.error}`;
+      this._els.error.title = stats.error;
+    }
   }
 
   mount(container = null) {

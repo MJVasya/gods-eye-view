@@ -3,11 +3,18 @@
  *
  * Feed event schema (fixed contract):
  *   { id: string,
- *     src: { country: string, code: string, lat: number, lon: number },
+ *     src: { country: string, code: string, lat: number, lon: number,
+ *            city?: string, region?: string, isp?: string, org?: string,
+ *            asn?: string },
  *     dst: { country: string, code: string, lat: number, lon: number },
  *     type: 'ddos'|'malware'|'intrusion'|'phishing'|'scan'|'c2',
  *     severity: 1-5,
- *     ts: epochMs }
+ *     ts: epochMs,
+ *     ioc?: string,   // raw indicator (live proxy only)
+ *     ref?: string }   // upstream provenance URL (live proxy only)
+ *
+ * Optional strings are kept when they are non-empty after trimming and
+ * omitted otherwise; nothing is ever invented.
  *
  * Malformed events are rejected individually (skipped); a non-array snapshot
  * is rejected as a whole by returning null so the source can throw.
@@ -39,13 +46,38 @@ function isEndpoint(value) {
   );
 }
 
+/**
+ * Optional GeoIP enrichment carried on endpoints by the live proxy
+ * (city/region/isp/org/asn from ip-api.com). Trimmed strings are kept;
+ * absent, empty, or non-string values are omitted rather than invented —
+ * consumers must render "n/a" honestly instead of guessing.
+ */
+const OPTIONAL_ENDPOINT_FIELDS = Object.freeze([
+  'city',
+  'region',
+  'isp',
+  'org',
+  'asn',
+]);
+
+function cleanOptionalString(value) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
 function normalizeEndpoint(value) {
-  return {
+  const endpoint = {
     country: value.country.trim(),
     code: value.code.trim(),
     lat: value.lat,
     lon: value.lon,
   };
+  for (const field of OPTIONAL_ENDPOINT_FIELDS) {
+    const cleaned = cleanOptionalString(value[field]);
+    if (cleaned !== undefined) endpoint[field] = cleaned;
+  }
+  return endpoint;
 }
 
 function normalizeEvent(event) {
@@ -60,7 +92,7 @@ function normalizeEvent(event) {
   )
     return null;
   if (!Number.isFinite(event.ts) || event.ts < 0) return null;
-  return {
+  const normalized = {
     id: event.id.trim(),
     src: normalizeEndpoint(event.src),
     dst: normalizeEndpoint(event.dst),
@@ -68,6 +100,14 @@ function normalizeEvent(event) {
     severity: event.severity,
     ts: event.ts,
   };
+  // Optional provenance extras (live proxy only). Kept as trimmed strings
+  // so the click-to-inspect panel can show the real indicator; absent or
+  // malformed extras are omitted, never fabricated.
+  const ioc = cleanOptionalString(event.ioc);
+  if (ioc !== undefined) normalized.ioc = ioc;
+  const ref = cleanOptionalString(event.ref);
+  if (ref !== undefined) normalized.ref = ref;
+  return normalized;
 }
 
 /**

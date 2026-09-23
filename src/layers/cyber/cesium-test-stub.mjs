@@ -93,6 +93,7 @@ export class Entity {
     this.id = options.id;
     this.polyline = options.polyline;
     this.ellipse = options.ellipse;
+    this.point = options.point;
     const position = options.position;
     this.position =
       position === undefined ? undefined : { getValue: () => position };

@@ -108,14 +108,19 @@ test('returns schema-conformant events, dropping malformed rows', async () => {
     assert.deepEqual(Object.keys(event).sort(), [
       'dst',
       'id',
+      'ioc',
+      'ref',
       'severity',
       'src',
       'ts',
       'type',
     ]);
-    assert.ok(!('ioc' in event), 'proxy extras are stripped');
-    assert.ok(!('ref' in event), 'proxy extras are stripped');
   }
+  // Provenance extras ride through for the click-to-inspect panel.
+  assert.equal(events[0].ioc, '1.12.229.231');
+  assert.equal(events[0].ref, 'https://cinsscore.com/');
+  assert.equal(events[2].ioc, 'http://example.com/login');
+  assert.equal(events[2].ref, 'https://openphish.com/');
   // The feed output is exactly what the layer's validator accepts.
   assert.equal(normalizeCyberEvents(events).length, 3);
 

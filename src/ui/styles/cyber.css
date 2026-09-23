@@ -213,3 +213,176 @@
 .cyber-hud-error[hidden] {
   display: none;
 }
+
+/* ── phase-3a control polish ─────────────────────────────────────────────
+   Clickable-control affordances only — no visual restyle. The layer-panel
+   row's top area (icon, name, count) toggles its layer (see
+   LayerPanel._renderToggles), so it carries the same pointer affordance as
+   the status pill itself. */
+.data-toggle-top {
+  cursor: pointer;
+}
+
+/* ── phase-3b intel panel ──────────────────────────────────────────
+   Click-to-inspect location-intel panel for the Cyber Intel layer. Mirrors
+   the cyber HUD visual language (monospace, uppercase, cyan glow on a dark
+   translucent field) but is interactive — pointer-events stay on so the
+   tabs and close button work. The attribution badge is amber for the
+   simulated feed and cyan for the live feed; both states are set by the
+   panel module from the event's captured feed mode. */
+
+#cyber-intel-panel {
+  position: fixed;
+  right: 14px;
+  top: 380px;
+  z-index: 8;
+  width: 296px;
+  padding: 12px 14px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(0, 255, 255, 0.75);
+  text-shadow: 0 0 4px rgba(0, 255, 255, 0.35);
+  background: rgba(2, 10, 14, 0.88);
+  border: 1px solid rgba(0, 255, 255, 0.22);
+  box-shadow: 0 0 24px rgba(0, 255, 255, 0.12);
+  pointer-events: auto;
+  user-select: text;
+}
+
+#cyber-intel-panel[hidden] {
+  display: none;
+}
+
+.cyber-intel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 255, 255, 0.14);
+  padding-bottom: 8px;
+}
+
+.cyber-intel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: rgba(0, 255, 255, 0.95);
+  flex: 1;
+}
+
+.cyber-intel-badge {
+  padding: 2px 6px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: #0a0a0f;
+  background: #ffb000;
+  text-shadow: none;
+  box-shadow: 0 0 10px rgba(255, 176, 0, 0.55);
+}
+
+.cyber-intel-badge-live {
+  background: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.55);
+}
+
+.cyber-intel-close {
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1;
+  color: rgba(0, 255, 255, 0.7);
+  background: transparent;
+  border: 1px solid rgba(0, 255, 255, 0.25);
+  cursor: pointer;
+  text-shadow: none;
+}
+
+.cyber-intel-close:hover {
+  color: #0a0a0f;
+  background: rgba(0, 255, 255, 0.85);
+}
+
+.cyber-intel-rows {
+  margin-bottom: 8px;
+}
+
+.cyber-intel-row {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px dotted rgba(0, 255, 255, 0.08);
+}
+
+.cyber-intel-key {
+  flex: 0 0 74px;
+  font-size: 8px;
+  letter-spacing: 1.6px;
+  color: rgba(0, 255, 255, 0.5);
+  padding-top: 1px;
+}
+
+.cyber-intel-value {
+  flex: 1;
+  color: rgba(232, 234, 237, 0.9);
+  word-break: break-all;
+  text-transform: none;
+  letter-spacing: 0.4px;
+}
+
+.cyber-intel-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+
+.cyber-intel-tab {
+  flex: 1;
+  padding: 4px 0;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 1.6px;
+  color: rgba(0, 255, 255, 0.55);
+  background: transparent;
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  cursor: pointer;
+  text-shadow: none;
+  text-transform: uppercase;
+}
+
+.cyber-intel-tab-active {
+  color: #0a0a0f;
+  background: rgba(0, 255, 255, 0.85);
+  text-shadow: none;
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.45);
+}
+
+.cyber-intel-maps {
+  position: relative;
+  height: 190px;
+  border: 1px solid rgba(0, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.cyber-intel-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.cyber-intel-map[hidden] {
+  display: none;
+}
+
+.cyber-intel-note {
+  margin-top: 6px;
+  font-size: 8px;
+  letter-spacing: 1px;
+  line-height: 1.5;
+  color: rgba(0, 255, 255, 0.45);
+  text-transform: none;
+}

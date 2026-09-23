@@ -529,3 +529,44 @@ test('abort during a live fetch does not trigger the simulated fallback', async 
   assert.equal(layer.source, LIVE_FEED_LABEL);
   layer.destroy(viewer);
 });
+
+test('getCyberEvent retains published rows with their feed attribution', async () => {
+  const { layer, viewer } = harness({
+    getSnapshot: async () => [attack('a1', { ioc: '1.2.3.4' })],
+  });
+  assert.equal(layer.getCyberEvent('a1'), null);
+  assert.equal(await layer.update(viewer), true);
+  const entry = layer.getCyberEvent('a1');
+  assert.ok(entry);
+  assert.equal(entry.id, 'a1');
+  assert.equal(entry.feedMode, 'simulated');
+  assert.equal(entry.sourceLabel, 'Simulated feed');
+  assert.equal(entry.record.src.code, 'RU');
+  assert.equal(layer.getCyberEvent('missing'), null);
+  // Returned entries are copies: panel reads cannot mutate layer state.
+  entry.record.src.code = 'XX';
+  assert.equal(layer.getCyberEvent('a1').record.src.code, 'RU');
+  layer.destroy(viewer);
+  assert.equal(layer.getCyberEvent('a1'), null);
+});
+
+test('feed switch clears retained records so attribution never mixes', async () => {
+  const liveFeed = {
+    getSnapshot: async () => [attack('live-1', { ioc: '9.9.9.9' })],
+  };
+  const { layer, viewer } = harness(
+    { getSnapshot: async () => [attack('sim-1')] },
+    { liveSource: createCyberSource({ feed: liveFeed }) },
+  );
+  assert.equal(await layer.update(viewer), true);
+  assert.equal(layer.getCyberEvent('sim-1')?.feedMode, 'simulated');
+  layer.setFeedMode('live');
+  // The simulated record is gone before the live tick publishes.
+  assert.equal(layer.getCyberEvent('sim-1'), null);
+  assert.equal(await layer.update(viewer), true);
+  const entry = layer.getCyberEvent('live-1');
+  assert.equal(entry?.feedMode, 'live');
+  assert.equal(entry?.sourceLabel, LIVE_FEED_LABEL);
+  assert.equal(entry?.record.ioc, '9.9.9.9');
+  layer.destroy(viewer);
+});

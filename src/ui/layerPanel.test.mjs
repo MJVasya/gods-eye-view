@@ -108,3 +108,43 @@ test('partial feed controls distinguish incomplete records from stale data and o
   panel._syncToggleButton(button, layer);
   assert.equal(button.textContent, 'OFF');
 });
+
+test('layer toggle pills carry an actionable tooltip and count pills name their exact count', async () => {
+  const { LayerPanel } = await import('./layerPanel.js');
+  const button = {
+    classList: { toggle: () => {} },
+    dataset: {},
+    setAttribute: () => {},
+  };
+  const off = {
+    id: 'cyber',
+    name: 'Cyber Intel',
+    source: 'sim',
+    enabled: false,
+    stats: {},
+  };
+  LayerPanel.prototype._syncToggleButton(button, off);
+  assert.equal(button.textContent, 'OFF');
+  assert.equal(button.title, 'Cyber Intel — OFF; click to enable this layer');
+
+  const on = {
+    ...off,
+    enabled: true,
+    stats: { count: 1234, lastUpdate: Date.now() },
+  };
+  LayerPanel.prototype._syncToggleButton(button, on);
+  assert.equal(button.textContent, 'ON');
+  assert.equal(button.title, 'Cyber Intel — ON; click to disable this layer');
+
+  const busy = { ...on, lifecycleState: 'enabling' };
+  LayerPanel.prototype._syncToggleButton(button, busy);
+  assert.equal(button.title, 'Cyber Intel — enabling...');
+
+  const count = {};
+  LayerPanel.prototype._syncCount(count, on);
+  assert.equal(count.textContent, '1.2K');
+  assert.equal(count.title, 'Cyber Intel — 1,234 loaded');
+  LayerPanel.prototype._syncCount(count, off);
+  assert.equal(count.textContent, '—');
+  assert.equal(count.title, '');
+});

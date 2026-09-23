@@ -8,7 +8,8 @@
  * in-app live feed (`src/layers/cyber/liveFeed.js`) can consume the
  * response with zero translation:
  *
- *   { id, src: {country, code, lat, lon}, dst: {...},
+ *   { id, src: {country, code, lat, lon, city?, region?, isp?, org?, asn?},
+ *     dst: {...},
  *     type: 'ddos'|'malware'|'intrusion'|'phishing'|'scan'|'c2',
  *     severity: 1-5, ts: epochMs }
  *
@@ -29,6 +30,9 @@
  * GeoIP: ip-api.com batch endpoint (free, keyless, 45 req/min). One batch
  * request (≤100 IPs) per proxy call, and the assembled response is cached
  * at the edge for 60 s — so upstream sees at most ~1 request/min per PoP.
+ * The batch asks for city, regionName, isp, org, and as (ASN) in addition
+ * to country/coordinates; those ride on the src endpoint as
+ * city/region/isp/org/asn for the click-to-inspect panel.
  *
  * Honesty notes (also documented in docs/CYBER_INTEL.md):
  *   - src for IP indicators is the REAL GeoIP location of that hostile IP.
@@ -189,7 +193,8 @@ async function geoipBatch(ips) {
     body: JSON.stringify(
       batch.map((query) => ({
         query,
-        fields: 'status,message,country,countryCode,lat,lon,query',
+        fields:
+          'status,message,country,countryCode,lat,lon,query,city,regionName,isp,org,as',
       })),
     ),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -204,12 +209,28 @@ async function geoipBatch(ips) {
       Number.isFinite(row.lat) &&
       Number.isFinite(row.lon)
     ) {
-      map.set(row.query, {
+      const endpoint = {
         country: String(row.country),
         code: String(row.countryCode).toUpperCase(),
         lat: row.lat,
         lon: row.lon,
-      });
+      };
+      // City/ISP enrichment is best-effort: only non-empty strings ride
+      // along, so clients can render "n/a" honestly when a field is
+      // missing. `as` maps to `asn` in the event schema.
+      const extras = {
+        city: row.city,
+        region: row.regionName,
+        isp: row.isp,
+        org: row.org,
+        asn: row.as,
+      };
+      for (const [key, value] of Object.entries(extras)) {
+        if (typeof value === 'string' && value.trim() !== '') {
+          endpoint[key] = value.trim();
+        }
+      }
+      map.set(row.query, endpoint);
     }
   }
   return map;

@@ -120,3 +120,82 @@ test('normalized rows are plain JSON-safe data', () => {
   const rows = normalizeCyberEvents([event()]);
   assert.deepEqual(JSON.parse(JSON.stringify(rows)), rows);
 });
+
+test('passes through GeoIP enrichment on endpoints, trimmed', () => {
+  const rows = normalizeCyberEvents([
+    event({
+      src: endpoint({
+        city: '  Frankfurt am Main ',
+        region: 'Hesse',
+        isp: 'Example ISP GmbH',
+        org: 'Example Org',
+        asn: 'AS12345',
+      }),
+    }),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].src, {
+    country: 'United States',
+    code: 'US',
+    lat: 38.9,
+    lon: -77.0,
+    city: 'Frankfurt am Main',
+    region: 'Hesse',
+    isp: 'Example ISP GmbH',
+    org: 'Example Org',
+    asn: 'AS12345',
+  });
+});
+
+test('drops malformed enrichment fields instead of inventing values', () => {
+  const rows = normalizeCyberEvents([
+    event({
+      src: endpoint({
+        city: '   ',
+        region: '',
+        isp: 42,
+        org: null,
+        asn: ['AS1'],
+        bogus: 'ignored',
+      }),
+    }),
+  ]);
+  assert.equal(rows.length, 1);
+  // No enrichment keys survive; the event itself is still valid.
+  assert.deepEqual(rows[0].src, {
+    country: 'United States',
+    code: 'US',
+    lat: 38.9,
+    lon: -77.0,
+  });
+  assert.equal('bogus' in rows[0].src, false);
+});
+
+test('passes through ioc/ref provenance extras, trimmed', () => {
+  const rows = normalizeCyberEvents([
+    event({ ioc: '  1.12.229.231 ', ref: 'https://cinsscore.com/ ' }),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ioc, '1.12.229.231');
+  assert.equal(rows[0].ref, 'https://cinsscore.com/');
+});
+
+test('drops malformed ioc/ref extras, keeping the event', () => {
+  const rows = normalizeCyberEvents([
+    event({ ioc: '   ', ref: 42 }),
+  ]);
+  assert.equal(rows.length, 1);
+  assert.equal('ioc' in rows[0], false);
+  assert.equal('ref' in rows[0], false);
+});
+
+test('omits enrichment entirely for plain hub endpoints', () => {
+  const rows = normalizeCyberEvents([event()]);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(Object.keys(rows[0].src).sort(), [
+    'code',
+    'country',
+    'lat',
+    'lon',
+  ]);
+});
