@@ -40,9 +40,24 @@ export function createIngestion({
       );
       if (!ownsAisRequest(requestController, requestSessionId)) return;
       setSourceLabel(snapshot.source);
+      // Honest simulated fallback: the wrapped source serves seeded vessel
+      // positions only while the live AIS feed is failing. Surfaced as
+      // FALLBACK · SIMULATED via getStats(), never as live AIS traffic.
+      // Cleared automatically once the live source answers again.
+      feed.simulated = snapshot.simulated === true;
+      feed.fallbackReason = feed.simulated
+        ? 'Live AIS feed unavailable — serving simulated positions'
+        : null;
+      feed.coverage = snapshot.coverage || null;
+      feed.sourceLabel = snapshot.source || null;
       // Map observations into the existing display store; source fields stop here.
+      // The snapshot-level simulated flag rides each row so cards and the HUD
+      // can label synthetic positions wherever they appear.
+      const snapshotSimulated = snapshot.simulated === true;
       applyAisFeedSnapshot(viewer, {
-        rows: snapshot.records.map(vesselDisplayRow),
+        rows: snapshot.records.map((record) =>
+          vesselDisplayRow(record, snapshotSimulated),
+        ),
         observedAtMs: snapshot.observedAtMs,
         freshness: snapshot.freshness,
         complete: snapshot.complete,
@@ -148,7 +163,7 @@ export function createIngestion({
     return { reconciled: true, ...snapshot };
   }
 
-  function vesselDisplayRow(record) {
+  function vesselDisplayRow(record, simulated = false) {
     return {
       mmsi: record.id,
       reference: record.reference,
@@ -161,6 +176,8 @@ export function createIngestion({
       speed: record.speedMps == null ? null : record.speedMps / 0.514444,
       course: record.courseDeg,
       heading: record.headingDeg,
+      // Snapshot-level honest-fallback marker → normalizeVessel → cards/HUD.
+      simulated,
       last_position_epoch:
         record.observedAtMs == null ? null : record.observedAtMs / 1000,
       last_position_UTC:
@@ -197,6 +214,14 @@ export function createVesselFeed() {
     loadingLabel: '',
     lastUpdate: null,
     count: 0,
+    /** @type {boolean} True while the on-screen vessels are simulated. */
+    simulated: false,
+    /** @type {string|null} Human-readable simulated-fallback reason. */
+    fallbackReason: null,
+    /** @type {string|null} Coverage label from the last snapshot. */
+    coverage: null,
+    /** @type {string|null} Source label from the last snapshot. */
+    sourceLabel: null,
     newestPositionAt: null,
     transportStatus: null,
     nextAttemptAt: null,

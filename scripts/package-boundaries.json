@@ -731,6 +731,7 @@
       "src/layers/flights/records.js",
       "src/layers/flights/recordPolicy.js",
       "src/layers/flights/snapshotRenderer.js",
+      "src/layers/flights/simulator.js",
       "src/data/inputOwnership.js"
     ],
     "external": ["cesium"]
@@ -766,7 +767,8 @@
       "src/layers/military/records.js",
       "src/layers/military/recordPolicy.js",
       "src/layers/military/snapshotRenderer.js",
-      "src/data/inputOwnership.js"
+      "src/data/inputOwnership.js",
+      "src/layers/military/simulator.js"
     ],
     "external": ["cesium"]
   },
@@ -814,7 +816,8 @@
       "src/layers/vessels/records.js",
       "src/layers/vessels/recordPolicy.js",
       "src/layers/vessels/snapshotRenderer.js",
-      "src/data/inputOwnership.js"
+      "src/data/inputOwnership.js",
+      "src/layers/vessels/simulator.js"
     ],
     "external": ["cesium"]
   },
@@ -870,7 +873,8 @@
       "src/layers/satellites/state.js",
       "src/layers/satellites/testing.js",
       "src/layers/satellites/tracking.js",
-      "src/data/inputOwnership.js"
+      "src/data/inputOwnership.js",
+      "src/layers/satellites/simulator.js"
     ],
     "external": ["cesium", "satellite.js"]
   },
@@ -1811,7 +1815,10 @@
       "src/director/sharing/lifetime.js",
       "src/director/authoring.js",
       "src/scenes/sharing.js",
-      "src/ui/sceneSharing.js"
+      "src/ui/sceneSharing.js",
+      "src/ui/cyberIntelPanel.js",
+      "src/ui/voiceControl.js",
+      "src/ui/voicePersonas.js"
     ],
     "external": [
       "@mapbox/vector-tile",

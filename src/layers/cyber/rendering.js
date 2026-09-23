@@ -10,6 +10,13 @@ import {
 export const CYBER_ARC_TTL_MS = 5 * 60 * 1000;
 /** Floor for age-faded opacity so old arcs stay faintly visible. */
 const MIN_ARC_ALPHA = 0.12;
+/**
+ * Default destination-cell size (degrees of latitude/longitude) used by
+ * clusterLabelRecords. Co-located targets merge into one label at every zoom
+ * level; distinct metros keep their own labels and the per-frame overlay
+ * arbiter keeps settling their screen-space placement.
+ */
+export const CYBER_LABEL_CLUSTER_CELL_DEG = 2.5;
 
 /**
  * Opacity from event age, computed once per update tick. Static value —
@@ -172,6 +179,72 @@ export function selectRenderCohort(rows, limit = CYBER_MAX_ARCS) {
         String(a.id).localeCompare(String(b.id)),
     )
     .slice(0, cap);
+}
+
+/**
+ * Destination-cell clustering for globe labels (phase 4a declutter).
+ *
+ * Arcs and markers keep rendering per record (see createCyberEntities), but
+ * labels anchored at nearly the same destination would paint on top of each
+ * other at every zoom level, so the label cohort collapses each cell to its
+ * single highest-priority attack. The winner carries `suppressed` — the
+ * number of same-cell attacks folded into it — so the label can render a
+ * `+N` suffix without changing the label aesthetic.
+ *
+ * Priority order matches selectRenderCohort (severity, then recency, then
+ * stable id), so the visible label is always the most important attack in
+ * the cell. Records without a usable destination never merge.
+ *
+ * @param {Array<Object>} rows Normalized cyber records.
+ * @param {object} [options]
+ * @param {number} [options.cellDeg=CYBER_LABEL_CLUSTER_CELL_DEG] Merge radius
+ *   in degrees (equirectangular, longitude scaled by cos(latitude)).
+ * @param {number} [options.limit] Max clusters returned (default: all).
+ * @returns {Array<{record:Object,suppressed:number}>} Clusters in priority order.
+ */
+export function clusterLabelRecords(rows, options = {}) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const cellDeg = Math.max(
+    0,
+    Number(options.cellDeg ?? CYBER_LABEL_CLUSTER_CELL_DEG) || 0,
+  );
+  const limitRaw = Number(options.limit);
+  const limit = Number.isFinite(limitRaw)
+    ? Math.max(0, Math.floor(limitRaw))
+    : rows.length;
+  if (limit === 0) return [];
+  const ordered = rows.slice().sort(
+    (a, b) =>
+      (b.severity || 0) - (a.severity || 0) ||
+      (b.ts || 0) - (a.ts || 0) ||
+      String(a.id).localeCompare(String(b.id)),
+  );
+  const clusters = [];
+  for (const record of ordered) {
+    const lat = Number(record?.dst?.lat);
+    const lon = Number(record?.dst?.lon);
+    const placeable = Number.isFinite(lat) && Number.isFinite(lon);
+    let host = null;
+    if (placeable && cellDeg > 0) {
+      for (const cluster of clusters) {
+        const dLat = lat - cluster.lat;
+        // Longitude degrees shrink toward the poles; scale so the merge
+        // radius stays roughly circular on the ground.
+        const dLon = (lon - cluster.lon) * Math.cos((lat * Math.PI) / 180);
+        if (dLat * dLat + dLon * dLon <= cellDeg * cellDeg) {
+          host = cluster;
+          break;
+        }
+      }
+    }
+    if (host) {
+      host.suppressed += 1;
+    } else {
+      clusters.push({ record, suppressed: 0, lat, lon });
+      if (clusters.length >= limit) break;
+    }
+  }
+  return clusters.map(({ record, suppressed }) => ({ record, suppressed }));
 }
 
 /**

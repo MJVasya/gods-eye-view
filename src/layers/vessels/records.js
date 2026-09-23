@@ -23,6 +23,9 @@ export function normalizeVessel(row) {
     lastPositionUtc: String(row.last_position_UTC || ''),
     lastPositionEpoch: finiteNumber(row.last_position_epoch),
     missedRefreshes: 0,
+    // Honest-fallback marker: true when this position came from the seeded
+    // simulator rather than the live AIS feed. Surfaced in cards + HUD.
+    simulated: row.simulated === true,
   };
 }
 
@@ -77,6 +80,7 @@ export class VesselRecords {
         record.lastPositionUtc = next.lastPositionUtc;
         record.lastPositionEpoch = next.lastPositionEpoch;
         record.missedRefreshes = 0;
+        record.simulated = next.simulated;
 
         effects.updated(record, before);
       } else {

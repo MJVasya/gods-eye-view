@@ -14,7 +14,9 @@ export function createLabels({ state: layerState, services, parts, source }) {
       id: String(ISS_NORAD),
       position,
       variant: 'label',
-      title: 'ISS',
+      // Honest while the seeded simulator is serving the catalog: the ISS dot
+      // is propagated from synthetic elements, not live CelesTrak data.
+      title: layerState._simulated ? 'ISS (SIMULATED)' : 'ISS',
       accent: '#ff4444',
       priority: 1000,
       collisionGroup: 'ambient-label',

@@ -83,6 +83,9 @@ export function createPresentation({
       mountHeightM: camera.mountHeightM,
       active: isActive,
       feedType: camera.feedType,
+      // Lets the panel skip doomed frame requests for seed markers that never
+      // had a live source, and label the honest placeholder correctly.
+      feedConfigured: !!camera.feedConfigured,
       sourceKind:
         health?.sourceKind ||
         camera.sourceKind ||

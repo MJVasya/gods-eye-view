@@ -9,6 +9,7 @@ import {
   MEDIA_ENDPOINT,
   PROJECTION_ACTIVE_REFRESH_MS,
   PROJECTION_IDLE_REFRESH_MS,
+  PROJECTION_IMAGE_TIMEOUT_MS,
   PLACEHOLDER_REPAINT_MS,
 } from './policy.js';
 
@@ -237,6 +238,18 @@ export function createFrames({ state: layerState, services, parts, source }) {
     const sep = frameUrl.includes('?') ? '&' : '?';
     runtime.imageLoading = true;
     runtime.imageReady = false;
+    // The runtime Image has no native timeout (projection.js clears the latch
+    // only on load/error): a stalled request would wedge imageLoading=true
+    // forever and block every future refresh. Arm a deadline that releases
+    // the latch so the next tick retries; the placeholder keeps painting on
+    // the plane meanwhile. Cleared by the load/error handlers in
+    // createProjectionRuntime and by destroyProjectionRuntime.
+    if (runtime.imageTimeout) clearTimeout(runtime.imageTimeout);
+    runtime.imageTimeout = setTimeout(() => {
+      runtime.imageTimeout = null;
+      runtime.imageLoading = false;
+      runtime.imageReady = false;
+    }, PROJECTION_IMAGE_TIMEOUT_MS);
     runtime.image.src = `${frameUrl}${sep}projTs=${Math.floor(now / refreshMs)}`;
   }
 

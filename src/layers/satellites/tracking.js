@@ -229,7 +229,9 @@ export function createTracking({ state: layerState, services, parts, source }) {
       id: String(noradId),
       layerId: 'satellites',
       layerName: 'Satellites',
-      source: 'CelesTrak',
+      source: layerState._simulated
+        ? 'Simulated (CelesTrak unreachable)'
+        : 'CelesTrak',
       label: name,
       latitude: pos.latitude,
       longitude: pos.longitude,

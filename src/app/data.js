@@ -1,6 +1,11 @@
 import { LayerLifecycle } from '../data/lifecycle.js';
 import { LayerPresentation } from './layerPresentation.js';
 import { CyberIntelHud } from './cyberIntelHud.js';
+import { buildAppVoiceActions, createVoiceControl } from '../ui/voiceControl.js';
+import {
+  closeCyberIntelPanel,
+  openCyberIntelPanel,
+} from '../ui/cyberIntelPanel.js';
 /** Register the application layer catalog before allowing state restoration. */
 export function createApplicationData({
   scene: { viewer, mapStackController },
@@ -29,6 +34,47 @@ export function createApplicationData({
   const cyberIntelHud = new CyberIntelHud(dataManager);
   defer(() => cyberIntelHud.destroy());
   cyberIntelHud.mount();
+  // Keyless voice control (Web Speech API, on-device only). Mic button mounts
+  // lazily into the shell's command dock; all speech stays client-side and the
+  // agent personas are local — no AI service is contacted.
+  const getCyberLayer = () => dataManager.layers.get('cyber')?.module ?? null;
+  const voice = createVoiceControl({
+    actions: buildAppVoiceActions({
+      viewer,
+      setCyberLayerVisible: (visible) => {
+        // setEnabled is async; the voice engine consumes results
+        // synchronously, so we guard the promise against unhandled
+        // rejections and confirm immediately (the toggle lands in <1s).
+        const pending = dataManager.setEnabled('cyber', Boolean(visible), {
+          origin: 'voice',
+        });
+        if (pending && typeof pending.catch === 'function')
+          pending.catch(() => {});
+        return { ok: true };
+      },
+      setCyberFeedMode: (mode) => {
+        const cyber = getCyberLayer();
+        if (!cyber || typeof cyber.setFeedMode !== 'function')
+          return { ok: false, reason: 'unwired' };
+        cyber.setFeedMode(mode);
+        return { ok: true };
+      },
+      setPanelOpen: (panelId, open) => {
+        // The intel panel shows one retained event at a time: "close panel"
+        // dismisses it; "open panel" shows the latest attack's intel.
+        if (!open) {
+          closeCyberIntelPanel();
+          return { ok: true };
+        }
+        const latest = getCyberLayer()?.getLatestCyberEvent?.();
+        if (!latest) return { ok: false, reason: 'unwired' };
+        openCyberIntelPanel(latest);
+        return { ok: true };
+      },
+    }),
+  });
+  voice.mount();
+  defer(() => voice.destroy());
   onData?.(dataManager);
   if (!catalog?.layers || !catalog?.metadata)
     throw new TypeError('An application layer catalog is required');

@@ -40,6 +40,22 @@ export function createState({ services }) {
 
   state._lastError = null;
 
+  /**
+   * True while the on-screen catalog is served from the seeded in-repo
+   * simulator because CelesTrak was unreachable. Drives the FALLBACK chip.
+   * @type {boolean}
+   */
+  state._simulated = false;
+
+  /** @type {string[]} Core group paths currently served from the simulator. */
+  state._simulatedCoreGroups = [];
+
+  /** @type {boolean} True while the dense extras are served from the simulator. */
+  state._simulatedDense = false;
+
+  /** @type {string|null} Human-readable simulated-fallback reason for stats. */
+  state._fallbackReason = null;
+
   state._activeUpdateControllers = new Set();
 
   state._denseLoadController = null;
@@ -162,4 +178,23 @@ export function createState({ services }) {
 
   state._lookupTleEntries = [];
   return state;
+}
+
+/**
+ * Recompute the layer-level simulated flag from its parts. Call after any
+ * mutation of `_simulatedCoreGroups` / `_simulatedDense`.
+ * @param {object} layerState Satellites layer state.
+ */
+export function refreshSimulatedFlag(layerState) {
+  const groups = Array.isArray(layerState._simulatedCoreGroups)
+    ? layerState._simulatedCoreGroups
+    : [];
+  layerState._simulated =
+    groups.length > 0 || layerState._simulatedDense === true;
+  const parts = [];
+  if (groups.length) parts.push(`core: ${groups.join(', ')}`);
+  if (layerState._simulatedDense) parts.push('dense: starlink');
+  layerState._fallbackReason = layerState._simulated
+    ? `CelesTrak unreachable — serving simulated catalog (${parts.join('; ')})`
+    : null;
 }

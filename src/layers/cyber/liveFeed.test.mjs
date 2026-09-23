@@ -222,3 +222,56 @@ test('LIVE_FEED_LABEL names the real aggregated sources', () => {
   assert.match(LIVE_FEED_LABEL, /OpenPhish/);
   assert.notEqual(LIVE_FEED_LABEL.toLowerCase(), 'simulated feed');
 });
+
+test('a hung proxy times out with a distinct error (no refresh-loop wedge)', async () => {
+  // Never settles on its own: without a client timeout the layer's refresh
+  // loop would wedge forever on "LIVE ●" with stale data (the manager never
+  // re-enters a tick while one is in flight). The stub honors the abort
+  // signal exactly like a real fetch implementation would.
+  const hanging = stubFetch(
+    (url, options) =>
+      new Promise((_, reject) => {
+        options.signal?.addEventListener?.('abort', () =>
+          reject(
+            options.signal.reason ??
+              new DOMException('aborted', 'AbortError'),
+          ),
+        );
+      }),
+  );
+  const started = Date.now();
+  await assert.rejects(
+    () =>
+      createLiveCyberFeed({ fetchImpl: hanging, timeoutMs: 60 }).getSnapshot(),
+    (error) => {
+      assert.match(error.message, /timed out after 60ms/);
+      assert.ok(
+        !/unreachable/.test(error.message),
+        'timeout is distinct from an unreachable host',
+      );
+      return true;
+    },
+  );
+  assert.ok(
+    Date.now() - started < 5000,
+    'timeout must fire on its own schedule',
+  );
+});
+
+test('caller abort keeps priority over the client timeout', async () => {
+  const controller = new AbortController();
+  const hanging = stubFetch(
+    (url, options) =>
+      new Promise((resolve, reject) => {
+        options.signal?.addEventListener?.('abort', () =>
+          reject(options.signal.reason),
+        );
+      }),
+  );
+  const pending = createLiveCyberFeed({
+    fetchImpl: hanging,
+    timeoutMs: 50,
+  }).getSnapshot({ signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, (error) => error.name === 'AbortError');
+});

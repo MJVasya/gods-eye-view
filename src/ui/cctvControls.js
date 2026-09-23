@@ -1,7 +1,10 @@
 import {
   _clearCctvFrame,
+  _clearCctvFrameTimeout,
   _queueCctvFrame,
   _settleCctvFrame,
+  _showCctvUnavailableCard,
+  _hideCctvUnavailableCard,
   _syncCctvSourceBadge,
 } from './cctvFrames.js';
 import {
@@ -35,6 +38,8 @@ export class CctvControls {
     this._cctvChipWasBusy = false;
     this._cctvFrameRequestToken = 0;
     this._cctvFramePreloader = null;
+    this._cctvFrameTimeout = null;
+    this._cctvFramePlaceholder = null;
     this._calibrationEdit = null;
     this._actionGeneration = 0;
     this._initCctvPanel();
@@ -60,11 +65,20 @@ export class CctvControls {
   _clearCctvFrame(...args) {
     return _clearCctvFrame.call(this, ...args);
   }
+  _clearCctvFrameTimeout(...args) {
+    return _clearCctvFrameTimeout.call(this, ...args);
+  }
   _queueCctvFrame(...args) {
     return _queueCctvFrame.call(this, ...args);
   }
   _settleCctvFrame(...args) {
     return _settleCctvFrame.call(this, ...args);
+  }
+  _showCctvUnavailableCard(...args) {
+    return _showCctvUnavailableCard.call(this, ...args);
+  }
+  _hideCctvUnavailableCard(...args) {
+    return _hideCctvUnavailableCard.call(this, ...args);
   }
   _syncCctvSourceBadge(...args) {
     return _syncCctvSourceBadge.call(this, ...args);

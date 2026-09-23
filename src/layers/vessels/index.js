@@ -9,9 +9,15 @@ import { createCards } from './cards.js';
 import { createTesting } from './testing.js';
 import { createEvidence } from './evidence.js';
 import { createQueries } from './queries.js';
+import { withSimulatedFallback } from './simulator.js';
 /** Compose one vessel layer with application-owned scene services. */
 export function createVesselLayer({ source, services, options = {} } = {}) {
-  const vesselState = createVesselState({ source, services });
+  // The decorator tries the live AIS source first and serves seeded simulated
+  // positions (honestly labeled) only while live is failing.
+  const vesselState = createVesselState({
+    source: withSimulatedFallback(source),
+    services,
+  });
   const parts = {};
   const layer = {};
   const context = { vesselState, services, parts, layer, options };

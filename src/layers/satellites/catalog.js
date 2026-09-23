@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
 import { twoline2satrec } from 'satellite.js';
+import { refreshSimulatedFlag } from './state.js';
 import {
   DENSE_REFRESH_FRAMES,
   DENSE_GROUP_PATH,
@@ -87,6 +88,15 @@ export function createCatalog({ state: layerState, services, parts, source }) {
       }
       const text = res.text;
       loadSignal.throwIfAborted();
+      // The wrapped source serves the seeded starlink catalog when CelesTrak
+      // is down — mark the layer so the chip reads FALLBACK · SIMULATED.
+      if (res.simulated === true) {
+        layerState._simulatedDense = true;
+        refreshSimulatedFlag(layerState);
+        console.warn(
+          `[Data:Satellites] Simulated catalog active: ${layerState._fallbackReason}`,
+        );
+      }
       if (
         token !== layerState._denseLoadToken ||
         layerState._params.catalog !== 'dense'
@@ -228,6 +238,11 @@ export function createCatalog({ state: layerState, services, parts, source }) {
     layerState._denseCursor = 0;
     layerState._count = layerState._points.size;
     layerState._catalogRevision++;
+    // Dense extras are gone — their simulated marker goes with them.
+    if (layerState._simulatedDense) {
+      layerState._simulatedDense = false;
+      refreshSimulatedFlag(layerState);
+    }
   }
   return {
     _abortActiveUpdates,

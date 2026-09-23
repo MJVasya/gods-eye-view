@@ -1,4 +1,5 @@
 import { ERROR_BACKOFF_INTERVAL } from './recordPolicy.js';
+import { withSimulatedFallback } from './simulator.js';
 
 /** Own acquisition, cancellation, freshness and backoff independently of rendering. */
 export function createIngestion({
@@ -49,6 +50,14 @@ export function createIngestion({
         feed._lastSource = snapshot.source;
         feed._lastCoverage = snapshot.coverage;
         setSourceLabel(feed._lastSource);
+        // Honest simulated fallback: the wrapped source serves the seeded
+        // fleet only while the live source is failing. Surfaced as
+        // FALLBACK · SIMULATED via getStats(), never as live traffic.
+        // Cleared automatically once the live source answers again.
+        feed._simulated = snapshot.simulated === true;
+        feed._fallbackReason = feed._simulated
+          ? 'Live source unavailable — serving simulated feed'
+          : null;
         const accepted = applySnapshot(snapshot, viewer);
         feed._count = accepted.count;
         // Freshness belongs to the source snapshot, not the moment this browser
@@ -90,7 +99,9 @@ export function createIngestion({
 /** Construct a fresh source lifetime and its refresh status. */
 export function createFlightFeed(source) {
   const feed = {};
-  feed._source = source;
+  // The decorator tries the live source first and serves the seeded simulated
+  // fleet (honestly labeled) only while live is failing.
+  feed._source = withSimulatedFallback(source);
   feed._count = 0;
   feed._lastUpdate = null;
   feed._backoff = false;
@@ -100,6 +111,10 @@ export function createFlightFeed(source) {
   feed._lastStatus = null;
   feed._lastSource = source?.label || 'Aircraft';
   feed._lastCoverage = 'worldwide upstream snapshot';
+  /** @type {boolean} True while the on-screen traffic is simulated. */
+  feed._simulated = false;
+  /** @type {string|null} Human-readable simulated-fallback reason. */
+  feed._fallbackReason = null;
   feed._trackingRefreshEpoch = 0;
   feed._lastTrackingRefreshOutcome = {
     epoch: 0,

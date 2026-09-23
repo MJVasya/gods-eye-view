@@ -4,6 +4,7 @@ import {
   AIS_FIRST_CONNECT_LABEL,
   AIS_HEALTHY_STATUSES,
 } from './policy.js';
+import { withSimulatedFallback } from './simulator.js';
 
 export function createLifecycle({
   vesselState,
@@ -105,6 +106,10 @@ export function createLifecycle({
     state.feed.loadingLabel = '';
     state.feed.lastUpdate = null;
     state.feed.count = 0;
+    state.feed.simulated = false;
+    state.feed.fallbackReason = null;
+    state.feed.coverage = null;
+    state.feed.sourceLabel = null;
     state.feed.newestPositionAt = null;
     state.feed.transportStatus = null;
     state.feed.nextAttemptAt = null;
@@ -145,7 +150,7 @@ export function createLifecycle({
         throw new Error('Configure the source before layer initialization');
       if (typeof source?.getSnapshot !== 'function')
         throw new TypeError('A snapshot source is required');
-      vesselState._source = source;
+      vesselState._source = withSimulatedFallback(source);
       this.source = source.label || this.source;
     },
 

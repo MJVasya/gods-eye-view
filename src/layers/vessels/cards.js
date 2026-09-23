@@ -18,11 +18,14 @@ export function createCards({
 
     // Pinned vessels missing from recent refreshes get a stale marker
     const stale = (record.missedRefreshes || 0) > 0;
+    // Simulated positions are labeled everywhere they appear — never let the
+    // HUD read as live AIS while the seeded fallback is serving.
+    const simTag = record.simulated ? ' (SIMULATED)' : '';
     el.classList.add('active');
     el.textContent = [
-      `AIS: ${trimHudValue(record.name, 32)}`,
+      `AIS: ${trimHudValue(record.name, 32)}${simTag}`,
       `${trimHudValue(record.type || 'VESSEL', 24)}  SPD: ${formatSpeed(record.speed)}  HDG: ${formatHeading(record.heading ?? record.course)}`,
-      `MMSI: ${record.mmsi || '--'}  ${formatPositionTime(record)}${stale ? '  · STALE' : ''}`,
+      `MMSI: ${record.mmsi || '--'}  ${formatPositionTime(record)}${stale ? '  · STALE' : ''}${simTag ? '  · SIMULATED' : ''}`,
     ].join('\n');
   }
 
@@ -57,6 +60,9 @@ export function createCards({
       parts.push(formatSpeed(record.speed));
     const direction = record.heading ?? record.course;
     if (Number.isFinite(direction)) parts.push(`${Math.round(direction)}°`);
+    // Ambient tooltip: simulated positions carry an explicit marker next to
+    // the self-identifying SIM-prefixed name.
+    if (record.simulated) parts.push('SIMULATED');
     return {
       id: vesselOverlayEntryId(record),
       actionable: Boolean(record?.mmsi),
@@ -94,7 +100,7 @@ export function createCards({
     if (destination) details.push(`→ ${trimHudValue(destination, 24)}`);
     const stale = (record.missedRefreshes || 0) > 0;
     details.push(
-      `MMSI ${record.mmsi || '--'} · ${formatPositionTime(record)}${stale ? ' · STALE' : ''}`,
+      `MMSI ${record.mmsi || '--'} · ${formatPositionTime(record)}${stale ? ' · STALE' : ''}${record.simulated ? ' · SIMULATED' : ''}`,
     );
     return {
       id: vesselOverlayEntryId(record),

@@ -178,7 +178,7 @@ export function _renderCctvState(state) {
       (cameraChanged ||
         (!frameLoading && this._cctvFrame.dataset.currentSrc !== nextSrc))
     ) {
-      this._queueCctvFrame(nextSrc, nextCameraId, cameraChanged);
+      this._queueCctvFrame(nextSrc, nextCameraId, cameraChanged, activeCamera);
     }
     if (!nextSrc) {
       this._clearCctvFrame();

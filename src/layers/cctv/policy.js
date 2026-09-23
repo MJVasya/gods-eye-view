@@ -87,6 +87,14 @@ export const CCTV_CALIBRATION_STORAGE_KEY_V2 =
 
 export const PROJECTION_TEXTURE_SWAP_MS = 1000;
 
+// Upper bound for one monitor-plane frame acquisition. The runtime Image has
+// no native timeout (projection.js only clears the latch on load/error), so a
+// stalled request would wedge imageLoading=true forever and block every future
+// refresh. Past the deadline the latch releases and the next tick retries;
+// the placeholder keeps painting on the plane meanwhile.
+
+export const PROJECTION_IMAGE_TIMEOUT_MS = 20000;
+
 export const PROJECTION_VERT_ASPECT =
   PROJECTION_CANVAS_WIDTH / PROJECTION_CANVAS_HEIGHT;
 

@@ -10,6 +10,7 @@ import {
   threatColor,
 } from './model.js';
 import {
+  clusterLabelRecords,
   createCyberEntities,
   selectRenderCohort,
   resolveCyberPickEventId,
@@ -194,7 +195,10 @@ export function createCyberLayer({
         const nowMs = Date.now();
         const nextEntities = createCyberEntities(deduped, nowMs);
         const overlayEntries = [];
-        for (const record of selectRenderCohort(deduped)) {
+        for (const { record, suppressed } of clusterLabelRecords(
+          selectRenderCohort(deduped),
+          { limit: CYBER_OVERLAY_COHORT_LIMIT },
+        )) {
           overlayEntries.push(
             createCyberOverlayEntry({
               id: record.id,
@@ -206,6 +210,7 @@ export function createCyberLayer({
               severity: record.severity,
               dstCode: record.dst.code,
               accent: threatColor(record.type).toCssColorString(),
+              clusterCount: suppressed,
             }),
           );
         }
@@ -432,6 +437,17 @@ export function createCyberLayer({
       };
     },
 
+    /**
+     * Most recently published retained event, in the same shape as
+     * getCyberEvent(). Lets voice control ("open panel") show the intel
+     * panel for the latest attack without a globe click. Null when empty.
+     */
+    getLatestCyberEvent() {
+      const keys = [..._records.keys()];
+      if (keys.length === 0) return null;
+      return layer.getCyberEvent(keys[keys.length - 1]);
+    },
+
     ...(liveSource
       ? {
           /**
@@ -448,8 +464,8 @@ export function createCyberLayer({
                   id: 'cyber-feed-mode',
                   label: live ? 'LIVE ●' : 'GO LIVE',
                   title: live
-                    ? `Live threat intel — ${LIVE_FEED_LABEL}. Click to return to the simulated feed.`
-                    : 'Opt in to the live threat-intel feed (real IOCs via the same-origin proxy). The simulated feed stays the default.',
+                    ? `LIVE — real threat intel (${LIVE_FEED_LABEL}) via the same-origin proxy. One tap returns to the simulated feed.`
+                    : 'GO LIVE — one tap switches to the live threat-intel feed (real IOCs via the same-origin proxy). The simulated feed stays the default.',
                   active: live,
                   state: live ? 'active' : 'idle',
                   onClick: () => layer.setFeedMode(live ? 'simulated' : 'live'),

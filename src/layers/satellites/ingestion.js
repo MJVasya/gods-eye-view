@@ -1,6 +1,7 @@
 import { twoline2satrec } from 'satellite.js';
 import * as Cesium from 'cesium';
 import { CATALOG_GROUPS, ISS_NORAD, POINT_STYLES } from './policy.js';
+import { refreshSimulatedFlag } from './state.js';
 
 export function createIngestion({
   state: layerState,
@@ -34,7 +35,14 @@ export function createIngestion({
               if (!res.ok) return { ...groupDef, entries: [], ok: false };
               const entries = parts.orbits.parseTLE(res.text);
               updateSignal.throwIfAborted();
-              return { ...groupDef, entries, ok: entries.length > 0 };
+              return {
+                ...groupDef,
+                entries,
+                ok: entries.length > 0,
+                // Honest-fallback marker: the source decorator sets this when
+                // it served the seeded simulated catalog for this group.
+                simulated: res.simulated === true,
+              };
             } catch (error) {
               if (updateSignal.aborted || error?.name === 'AbortError')
                 throw error;
@@ -73,6 +81,23 @@ export function createIngestion({
         layerState._lastError = failed.length
           ? `${failed.length} CelesTrak group${failed.length === 1 ? '' : 's'} unavailable`
           : null;
+
+        // Honest simulated fallback: groups the source decorator served from
+        // the seeded in-repo catalog are surfaced as FALLBACK · SIMULATED via
+        // getStats(), never as live CelesTrak data. Cleared automatically on
+        // the next refresh once CelesTrak answers again.
+        layerState._simulatedCoreGroups = results
+          .filter((r) => r.ok && r.simulated)
+          .map((r) => r.path);
+        // The dense extras rebuild after this; until then they are gone, so
+        // their simulated marker resets here (the dense load re-marks it).
+        layerState._simulatedDense = false;
+        refreshSimulatedFlag(layerState);
+        if (layerState._simulated) {
+          console.warn(
+            `[Data:Satellites] Simulated catalog active: ${layerState._fallbackReason}`,
+          );
+        }
 
         // Clear existing
         layerState._pointCollection.removeAll();

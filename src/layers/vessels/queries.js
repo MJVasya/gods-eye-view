@@ -499,6 +499,11 @@ export function createQueries({
     getStats() {
       const waitingForFirstPosition =
         state.feed.firstConnectPhase === 'loading';
+      // While the seeded simulator is serving positions, the chip must read
+      // FALLBACK · SIMULATED — never present synthetic tracks as live AIS
+      // data. The explicit fallback/mode flags drive the amber chip via
+      // layerFeedState().
+      const simulated = state.feed.simulated === true;
       return {
         count: state.feed.count,
         lastUpdate: state.feed.lastUpdate,
@@ -521,6 +526,10 @@ export function createQueries({
         // backing off, say how long until the next attempt instead of leaving
         // the user to guess whether anything is still happening.
         retryInSec: aisRetryInSec(),
+        source: state.feed.sourceLabel,
+        coverage: state.feed.coverage,
+        fallback: simulated,
+        mode: simulated ? 'sim' : 'live',
       };
     },
   };

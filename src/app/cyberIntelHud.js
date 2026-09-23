@@ -28,6 +28,130 @@ const THREAT_TYPES = Object.freeze([
 
 const MAX_TOP_ENTRIES = 5;
 
+/**
+ * Phase 4a panel-stack layout. The HUD is a fixed right-edge readout; the
+ * CONTEXT panel lives in #right-context-rail, whose top is computed at
+ * runtime (26vh baseline, adjusted for obstacles). A static `top` can never
+ * clear it at every viewport size, so the HUD docks itself below the rail
+ * whenever their horizontal bands intersect.
+ */
+const CYBER_HUD_DEFAULT_TOP = 118;
+const CYBER_HUD_WIDTH = 248;
+const CYBER_HUD_RIGHT_OFFSET = 14;
+const CYBER_HUD_STACK_GAP = 12;
+/** Fallback height (px) when the panel is not laid out yet. */
+const CYBER_HUD_ESTIMATED_HEIGHT = 344;
+
+/**
+ * Pure layout math for the floating Cyber Intel HUD (phase 4a declutter).
+ *
+ * The HUD must never overlap #right-context-rail at any viewport size.
+ * Placement preference: full height below the rail → full height above the
+ * rail → shrunk below the rail → shrunk above the rail → clamped on screen
+ * (overlap is unavoidable only when the rail itself nearly fills the
+ * viewport; the panel then scrolls internally — see the phase-4a CSS).
+ *
+ * @param {object} [input]
+ * @param {number} [input.viewportWidth] Viewport width in px.
+ * @param {number} [input.viewportHeight] Viewport height in px.
+ * @param {number} [input.hudWidth=248] HUD width in px.
+ * @param {number} [input.hudHeight=0] Measured HUD height in px.
+ * @param {object|null} [input.railRect] Visible #right-context-rail rect
+ *   ({left,right,top,bottom}) or null when the rail is absent/hidden.
+ * @param {number} [input.defaultTop=118] Top offset when nothing overlaps.
+ * @param {number} [input.gap=12] Clearance between stacked panels.
+ * @param {number} [input.minVisible=160] Minimum usable shrunk height.
+ * @returns {{top:number,maxHeight:number|null}} Docked top offset, plus a
+ *   max-height when the panel is shrunk to fit (null = unconstrained).
+ */
+export function computeCyberHudTop({
+  viewportWidth = 0,
+  viewportHeight = 0,
+  hudWidth = CYBER_HUD_WIDTH,
+  hudHeight = 0,
+  railRect = null,
+  defaultTop = CYBER_HUD_DEFAULT_TOP,
+  gap = CYBER_HUD_STACK_GAP,
+  minVisible = 160,
+} = {}) {
+  const vw = Math.max(0, Number(viewportWidth) || 0);
+  const vh = Math.max(0, Number(viewportHeight) || 0);
+  const width = Math.max(0, Number(hudWidth) || 0);
+  const height = Math.max(0, Number(hudHeight) || 0);
+  const safeGap = Math.max(0, Number(gap) || 0);
+  const minFit = Math.max(0, Number(minVisible) || 0);
+  const hudLeft = vw - CYBER_HUD_RIGHT_OFFSET - width;
+  const hudRight = vw - CYBER_HUD_RIGHT_OFFSET;
+  const overlapsRail =
+    !!railRect &&
+    Number.isFinite(railRect.left) &&
+    Number.isFinite(railRect.right) &&
+    Number.isFinite(railRect.top) &&
+    Number.isFinite(railRect.bottom) &&
+    railRect.right > railRect.left &&
+    railRect.bottom > railRect.top &&
+    railRect.left < hudRight &&
+    railRect.right > hudLeft;
+
+  /** Clamp a placement on screen; shrink when it cannot fit at full height. */
+  const fit = (top, fullHeight) => {
+    const clampedTop = Math.min(
+      Math.max(safeGap, top),
+      Math.max(safeGap, vh - safeGap - fullHeight),
+    );
+    const maxHeight =
+      fullHeight > 0 && clampedTop + fullHeight > vh - safeGap
+        ? Math.round(Math.max(0, vh - clampedTop - safeGap))
+        : null;
+    return { top: Math.round(clampedTop), maxHeight };
+  };
+
+  if (!overlapsRail) return fit(defaultTop, height);
+
+  const below = railRect.bottom + safeGap;
+  const belowSpace = vh - safeGap - below;
+  const aboveFull = railRect.top - safeGap - height;
+  const aboveSpace = railRect.top - safeGap - safeGap;
+  if (belowSpace >= height) return { top: Math.round(below), maxHeight: null };
+  if (aboveFull >= safeGap)
+    return { top: Math.round(aboveFull), maxHeight: null };
+  if (belowSpace >= minFit)
+    return { top: Math.round(below), maxHeight: Math.round(belowSpace) };
+  if (aboveSpace >= minFit)
+    return { top: safeGap, maxHeight: Math.round(aboveSpace) };
+  // No comfortable slot: take whatever sliver stays clear of the rail rather
+  // than overlapping it. Only when the rail itself fills the viewport does
+  // the final clamp allow overlap, keeping the panel on screen and scrollable.
+  if (aboveSpace > 0)
+    return { top: safeGap, maxHeight: Math.round(aboveSpace) };
+  if (belowSpace > 0)
+    return { top: Math.round(below), maxHeight: Math.round(belowSpace) };
+  return fit(safeGap, height);
+}
+
+/**
+ * Stack the click-to-inspect intel panel under the HUD (phase 4a declutter).
+ * Pure companion to computeCyberHudTop; keeps at least `minVisible` px of the
+ * panel on screen on short viewports.
+ */
+export function computeCyberIntelPanelTop({
+  viewportHeight = 0,
+  hudTop = CYBER_HUD_DEFAULT_TOP,
+  hudHeight = CYBER_HUD_ESTIMATED_HEIGHT,
+  gap = CYBER_HUD_STACK_GAP,
+  minVisible = 96,
+} = {}) {
+  const vh = Math.max(0, Number(viewportHeight) || 0);
+  const safeGap = Math.max(0, Number(gap) || 0);
+  const stacked =
+    (Number(hudTop) || 0) + (Number(hudHeight) || 0) + safeGap;
+  const clampedTop = Math.min(
+    stacked,
+    Math.max(safeGap, vh - Math.max(0, Number(minVisible) || 0)),
+  );
+  return Math.round(Math.max(safeGap, clampedTop));
+}
+
 function finiteCount(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : 0;
@@ -96,6 +220,10 @@ export class CyberIntelHud {
     this._els = null;
     this._unsubscribe = null;
     this._destroyed = false;
+    this._onResize = null;
+    this._railResizeObserver = null;
+    this._railMutationObserver = null;
+    this._repositionQueued = false;
   }
 
   _el(doc, tag, className) {
@@ -231,6 +359,146 @@ export class CyberIntelHud {
     }
   }
 
+  /**
+   * Dock the HUD clear of #right-context-rail (phase 4a declutter).
+   *
+   * The rail's top/height are computed at runtime, so a static stylesheet
+   * `top` overlaps it on some viewports (the reported HUD/CONTEXT overlap).
+   * This measures the live rail rect and publishes --cyber-hud-top (plus the
+   * stacked --cyber-intel-panel-top for the click-to-inspect panel) as CSS
+   * variables; the phase-4a stylesheet rules consume them. When the HUD is
+   * hidden or there is no viewport, the variables are removed so the static
+   * stylesheet defaults apply.
+   */
+  _reposition() {
+    if (this._destroyed || !this._root || !this._doc) return;
+    const doc = this._doc;
+    const rootEl = doc.documentElement;
+    const setVar = (name, value) => {
+      try {
+        if (value == null) rootEl?.style?.removeProperty?.(name);
+        else rootEl?.style?.setProperty?.(name, value);
+      } catch {
+        /* styling is best effort in non-DOM harnesses */
+      }
+    };
+    const view =
+      typeof globalThis.window !== 'undefined' ? globalThis.window : null;
+    const vw =
+      view && Number.isFinite(Number(view.innerWidth))
+        ? Number(view.innerWidth)
+        : 0;
+    const vh =
+      view && Number.isFinite(Number(view.innerHeight))
+        ? Number(view.innerHeight)
+        : 0;
+    if (this._root.hidden || vw <= 0 || vh <= 0) {
+      setVar('--cyber-hud-top', null);
+      setVar('--cyber-hud-max-height', null);
+      setVar('--cyber-intel-panel-top', null);
+      return;
+    }
+    let railRect = null;
+    const rail =
+      typeof doc.getElementById === 'function'
+        ? doc.getElementById('right-context-rail')
+        : null;
+    if (rail && typeof rail.getBoundingClientRect === 'function') {
+      const rect = rail.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        railRect = {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          bottom: rect.bottom,
+        };
+      }
+    }
+    this._ensureRailObserver(rail);
+    const measured = Number(this._root.offsetHeight);
+    const hudHeight =
+      Number.isFinite(measured) && measured > 0
+        ? measured
+        : CYBER_HUD_ESTIMATED_HEIGHT;
+    const { top, maxHeight } = computeCyberHudTop({
+      viewportWidth: vw,
+      viewportHeight: vh,
+      hudHeight,
+      railRect,
+    });
+    setVar('--cyber-hud-top', `${top}px`);
+    setVar(
+      '--cyber-hud-max-height',
+      maxHeight == null ? null : `${maxHeight}px`,
+    );
+    setVar(
+      '--cyber-intel-panel-top',
+      `${computeCyberIntelPanelTop({
+        viewportHeight: vh,
+        hudTop: top,
+        hudHeight: maxHeight == null ? hudHeight : maxHeight,
+      })}px`,
+    );
+  }
+
+  /**
+   * Watch the rail for expand/collapse resizes AND moves. ResizeObserver
+   * alone is not enough: the rail's own layout pass repositions it via
+   * inline `--right-stack-safe-top` writes (a move, not a resize), so a
+   * MutationObserver on style/class attributes covers every reposition.
+   * Callbacks are rAF-throttled and best effort — they never throw.
+   */
+  _ensureRailObserver(rail) {
+    if (this._destroyed) return;
+    if (this._railResizeObserver && this._railMutationObserver) return;
+    if (!rail) return;
+    const schedule = () => this._scheduleReposition();
+    if (
+      !this._railResizeObserver &&
+      typeof globalThis.ResizeObserver === 'function'
+    ) {
+      try {
+        this._railResizeObserver = new globalThis.ResizeObserver(schedule);
+        this._railResizeObserver.observe(rail);
+      } catch {
+        this._railResizeObserver = null;
+      }
+    }
+    if (
+      !this._railMutationObserver &&
+      typeof globalThis.MutationObserver === 'function'
+    ) {
+      try {
+        this._railMutationObserver = new globalThis.MutationObserver(schedule);
+        this._railMutationObserver.observe(rail, {
+          attributes: true,
+          attributeFilter: ['style', 'class'],
+        });
+      } catch {
+        this._railMutationObserver = null;
+      }
+    }
+  }
+
+  /** Coalesce bursts of rail mutations into one reposition per frame. */
+  _scheduleReposition() {
+    if (this._destroyed || this._repositionQueued) return;
+    this._repositionQueued = true;
+    const run = () => {
+      this._repositionQueued = false;
+      this._reposition();
+    };
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      try {
+        globalThis.requestAnimationFrame(run);
+        return;
+      } catch {
+        /* fall through to a synchronous reposition */
+      }
+    }
+    run();
+  }
+
   _readStats() {
     try {
       const row = this._manager
@@ -248,6 +516,9 @@ export class CyberIntelHud {
     if (this._destroyed || !this._root || !this._els) return;
     const { enabled, stats } = this._readStats();
     this._root.hidden = !enabled;
+    // Re-dock whenever visibility changes; _reposition clears the stacking
+    // variables while hidden so the static stylesheet defaults apply.
+    this._reposition();
     if (!enabled || !stats) return;
     this._els.countNum.textContent = formatCyberCount(stats.count);
     this._renderTopList(this._els.sourceList, stats.topSources);
@@ -259,6 +530,12 @@ export class CyberIntelHud {
     if (badge) {
       const label = live ? 'LIVE FEED' : 'SIMULATED FEED';
       if (badge.textContent !== label) badge.textContent = label;
+      // Amber in simulated, cyan in live — matching the click-to-inspect
+      // panel's cyber-intel-badge-live. classList is guarded for headless
+      // test fakes that don't implement it.
+      if (typeof badge.classList?.toggle === 'function') {
+        badge.classList.toggle('cyber-hud-live', live);
+      }
       badge.title = live
         ? stats.source || 'Live threat-intel feed'
         : 'Simulated feed — generated locally, not real threat intelligence';
@@ -300,6 +577,8 @@ export class CyberIntelHud {
       this._els.error.textContent = `ERR ${stats.error}`;
       this._els.error.title = stats.error;
     }
+    // Content height changed — re-dock clear of the context rail.
+    this._reposition();
   }
 
   mount(container = null) {
@@ -325,6 +604,14 @@ export class CyberIntelHud {
       )
         this.refresh();
     });
+    // Re-dock on viewport resizes; the rail observer (installed in
+    // _reposition) covers expand/collapse of the CONTEXT panel.
+    const view =
+      typeof globalThis.window !== 'undefined' ? globalThis.window : null;
+    if (view && typeof view.addEventListener === 'function') {
+      this._onResize = () => this._reposition();
+      view.addEventListener('resize', this._onResize);
+    }
     this.refresh();
   }
 
@@ -337,6 +624,48 @@ export class CyberIntelHud {
       /* listener removal is best effort */
     }
     this._unsubscribe = null;
+    const view =
+      typeof globalThis.window !== 'undefined' ? globalThis.window : null;
+    if (
+      view &&
+      typeof view.removeEventListener === 'function' &&
+      this._onResize
+    ) {
+      try {
+        view.removeEventListener('resize', this._onResize);
+      } catch {
+        /* listener removal is best effort */
+      }
+    }
+    this._onResize = null;
+    if (this._railResizeObserver) {
+      try {
+        this._railResizeObserver.disconnect();
+      } catch {
+        /* observer teardown is best effort */
+      }
+      this._railResizeObserver = null;
+    }
+    if (this._railMutationObserver) {
+      try {
+        this._railMutationObserver.disconnect();
+      } catch {
+        /* observer teardown is best effort */
+      }
+      this._railMutationObserver = null;
+    }
+    this._repositionQueued = false;
+    try {
+      this._doc?.documentElement?.style?.removeProperty?.('--cyber-hud-top');
+      this._doc?.documentElement?.style?.removeProperty?.(
+        '--cyber-hud-max-height',
+      );
+      this._doc?.documentElement?.style?.removeProperty?.(
+        '--cyber-intel-panel-top',
+      );
+    } catch {
+      /* styling is best effort in non-DOM harnesses */
+    }
     this._root?.remove?.();
     this._root = null;
     this._doc = null;

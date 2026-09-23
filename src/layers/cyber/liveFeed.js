@@ -59,6 +59,44 @@ function withLimitParam(proxyUrl, maxEvents) {
 }
 
 /**
+ * Combine the caller's abort authority with a client-side timeout.
+ *
+ * Without this, a hung proxy (connection accepted, no bytes ever sent)
+ * wedges the whole layer: the data manager skips re-entrant ticks while a
+ * refresh is in flight, and the layer only aborts the previous request at
+ * the start of a new update() — which never comes. The chip would read
+ * "LIVE ●" forever with stale data and no error. A timeout abort surfaces
+ * as a plain fetch failure (see below), so the layer falls back to the
+ * simulated feed with a user-visible notice instead of wedging.
+ *
+ * The caller's signal keeps priority: a user-initiated abort rethrows its
+ * own reason first, preserving the layer's abort-swallowing path.
+ */
+function combineWithTimeout(signal, timeoutMs) {
+  const timeoutSignal =
+    Number.isFinite(timeoutMs) &&
+    timeoutMs > 0 &&
+    typeof AbortSignal?.timeout === 'function'
+      ? AbortSignal.timeout(timeoutMs)
+      : null;
+  if (
+    signal &&
+    timeoutSignal &&
+    typeof AbortSignal?.any === 'function'
+  ) {
+    try {
+      return {
+        combined: AbortSignal.any([signal, timeoutSignal]),
+        timeoutSignal,
+      };
+    } catch {
+      /* feature-detect fallback below */
+    }
+  }
+  return { combined: signal ?? timeoutSignal, timeoutSignal };
+}
+
+/**
  * Create a live cyber-threat feed source.
  *
  * Same interface as the simulator (`{ getSnapshot({ signal }) }`) so it
@@ -77,11 +115,16 @@ function withLimitParam(proxyUrl, maxEvents) {
  * @param {Function} [opts.fetchImpl] Injectable fetch (tests).
  * @param {number} [opts.maxEvents=96] Cap on events per snapshot, sent to
  *   the proxy as `?limit=` (proxy clamps to 1–200).
+ * @param {number} [opts.timeoutMs=20000] Client-side timeout per snapshot.
+ *   A hung proxy otherwise wedges the layer's refresh loop (the manager
+ *   never re-enters a tick while one is in flight); the timeout turns a
+ *   hang into a normal fetch failure so the layer falls back to simulated.
  */
 export function createLiveCyberFeed({
   proxyUrl = envProxyUrl() || DEFAULT_CYBER_FEED_PROXY_URL,
   fetchImpl = (...args) => globalThis.fetch(...args),
   maxEvents = 96,
+  timeoutMs = 20000,
 } = {}) {
   if (typeof proxyUrl !== 'string' || !proxyUrl.trim()) {
     throw new TypeError('Live cyber feed requires a proxy URL');
@@ -90,14 +133,25 @@ export function createLiveCyberFeed({
   return {
     async getSnapshot({ signal } = {}) {
       signal?.throwIfAborted();
+      const { combined, timeoutSignal } = combineWithTimeout(
+        signal,
+        timeoutMs,
+      );
       let response;
       try {
         response = await fetchImpl(url, {
-          signal,
+          signal: combined,
           headers: { accept: 'application/json' },
         });
       } catch (error) {
         signal?.throwIfAborted(); // preserve abort semantics for the caller
+        // Distinct from a refused/unreachable host: the proxy accepted the
+        // connection and never answered. Same fallback path, honest reason.
+        if (timeoutSignal?.aborted) {
+          throw new Error(
+            `Live cyber feed proxy timed out after ${timeoutMs}ms`,
+          );
+        }
         throw new Error(
           `Live cyber feed proxy unreachable: ${error?.message || error}`,
         );

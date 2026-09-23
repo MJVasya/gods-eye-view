@@ -126,13 +126,15 @@ export function updateHud(
     this.position.textContent = `${lat} · ${lon}`;
   }
   if (this.aircraftMeta) {
-    const feedState = this.surfaceAcquiring
-      ? 'ACQUIRING SURFACE'
-      : this.surfaceFallback
-        ? 'SURFACE FALLBACK'
-        : info.stale
-          ? 'STALE FEED'
-          : 'LIVE TRACK';
+    const feedState = info.simulated
+      ? 'SIMULATED TRACK'
+      : this.surfaceAcquiring
+        ? 'ACQUIRING SURFACE'
+        : this.surfaceFallback
+          ? 'SURFACE FALLBACK'
+          : info.stale
+            ? 'STALE FEED'
+            : 'LIVE TRACK';
     this.aircraftMeta.textContent = `${info.layerId === 'military' ? 'MILITARY' : 'COMMERCIAL'} · ${feedState} · COURSE ALIGNED`;
   }
   this.updateRoute(info);

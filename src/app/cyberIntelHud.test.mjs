@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CyberIntelHud, normalizeCyberStats } from './cyberIntelHud.js';
+import {
+  computeCyberHudTop,
+  computeCyberIntelPanelTop,
+} from './cyberIntelHud.js';
 
 function fakeElement(tag) {
   const el = {
@@ -26,6 +30,29 @@ function fakeElement(tag) {
     get firstChild() {
       return this.children[0] || null;
     },
+    classList: {
+      _host: null,
+      _parse() {
+        return String(this._host.className || '')
+          .split(/\s+/)
+          .filter(Boolean);
+      },
+      _write(classes) {
+        this._host.className = classes.join(' ');
+      },
+      toggle(name, force) {
+        const classes = this._parse();
+        const has = classes.includes(name);
+        const want = force === undefined ? !has : Boolean(force);
+        if (want && !has) classes.push(name);
+        if (!want && has) classes.splice(classes.indexOf(name), 1);
+        this._write(classes);
+        return want;
+      },
+      contains(name) {
+        return this._parse().includes(name);
+      },
+    },
     appendChild(child) {
       this.children.push(child);
       child.parentNode = this;
@@ -45,6 +72,7 @@ function fakeElement(tag) {
       this.parentNode?.removeChild(this);
     },
   };
+  el.classList._host = el;
   return el;
 }
 
@@ -306,6 +334,26 @@ test('the attribution badge follows the feed mode and never mixes the labels', (
   });
 });
 
+test('the attribution badge flips its live styling class with the feed mode', () => {
+  withDocument(fakeDocument(), () => {
+    const state = { enabled: true, stats: fakeStats() };
+    const manager = fakeManager(state);
+    const hud = new CyberIntelHud(manager);
+    hud.mount();
+    const badge = findByClass(hud._root, 'cyber-hud-sim');
+    assert.equal(badge.classList.contains('cyber-hud-live'), false);
+
+    state.stats = { ...fakeStats(), simulated: false };
+    manager.emit({ type: 'data-updated', layerId: 'cyber' });
+    assert.equal(badge.classList.contains('cyber-hud-live'), true);
+
+    state.stats = fakeStats();
+    manager.emit({ type: 'data-updated', layerId: 'cyber' });
+    assert.equal(badge.classList.contains('cyber-hud-live'), false);
+    hud.destroy();
+  });
+});
+
 test('the panel aria-label follows the feed mode', () => {
   withDocument(fakeDocument(), () => {
     const state = { enabled: true, stats: fakeStats() };
@@ -325,4 +373,194 @@ test('the panel aria-label follows the feed mode', () => {
     );
     hud.destroy();
   });
+});
+
+test('computeCyberHudTop keeps the static offset when the rail is absent', () => {
+  assert.deepEqual(
+    computeCyberHudTop({ viewportWidth: 1600, viewportHeight: 900, hudHeight: 344 }),
+    { top: 118, maxHeight: null },
+  );
+});
+
+test('computeCyberHudTop docks below the rail when bands intersect', () => {
+  // 1600x900: HUD band x 1338..1586; rail x 1218..1548, top 234, bottom 700.
+  // Full height fits neither below nor above, so the HUD docks below the
+  // rail, shrunk to the available slot — still no overlap.
+  const rail = { left: 1218, right: 1548, top: 234, bottom: 700 };
+  assert.deepEqual(
+    computeCyberHudTop({
+      viewportWidth: 1600,
+      viewportHeight: 900,
+      hudHeight: 344,
+      railRect: rail,
+    }),
+    { top: 712, maxHeight: 176 },
+  );
+});
+
+test('computeCyberHudTop docks below a short rail with room to spare', () => {
+  const rail = { left: 1218, right: 1548, top: 234, bottom: 320 };
+  const { top, maxHeight } = computeCyberHudTop({
+    viewportWidth: 1600,
+    viewportHeight: 900,
+    hudHeight: 344,
+    railRect: rail,
+  });
+  assert.equal(top, 332);
+  assert.equal(maxHeight, null);
+});
+
+test('computeCyberHudTop ignores a rail that does not intersect horizontally', () => {
+  const rail = { left: 100, right: 430, top: 234, bottom: 700 };
+  const { top } = computeCyberHudTop({
+    viewportWidth: 1600,
+    viewportHeight: 900,
+    hudHeight: 344,
+    railRect: rail,
+  });
+  assert.equal(top, 118);
+});
+
+test('computeCyberHudTop never overlaps: narrow and short viewports', () => {
+  for (const [w, h] of [
+    [1280, 720],
+    [1920, 1080],
+    [1366, 768],
+    [1920, 1200],
+    [2560, 1440],
+  ]) {
+    const rail = { left: w - 52 - 330, right: w - 52, top: h * 0.26, bottom: h * 0.7 };
+    const { top, maxHeight } = computeCyberHudTop({
+      viewportWidth: w,
+      viewportHeight: h,
+      hudHeight: 344,
+      railRect: rail,
+    });
+    const hudLeft = w - 14 - 248;
+    const hudRight = w - 14;
+    const hOverlap = rail.left < hudRight && rail.right > hudLeft;
+    const hudBottom = top + (maxHeight == null ? 344 : maxHeight);
+    assert.ok(top >= 0 && hudBottom <= h + 1, `viewport ${w}x${h}: on screen`);
+    if (hOverlap) {
+      const clears =
+        top >= rail.bottom + 12 - 1 || hudBottom <= rail.top - 12 + 1;
+      assert.ok(clears, `viewport ${w}x${h}: clears the rail`);
+    }
+  }
+});
+
+test('computeCyberHudTop degrades gracefully when the rail fills the viewport', () => {
+  // 800x600: the rail (156..420) leaves no full-height slot clear of it, so
+  // the HUD takes the 132px sliver above the rail rather than overlapping it.
+  const { top, maxHeight } = computeCyberHudTop({
+    viewportWidth: 800,
+    viewportHeight: 600,
+    hudHeight: 344,
+    railRect: { left: 418, right: 748, top: 156, bottom: 420 },
+  });
+  assert.equal(top, 12);
+  assert.equal(maxHeight, 132);
+  assert.ok(top + maxHeight <= 156 - 12 + 1, 'clears the rail');
+});
+
+test('computeCyberHudTop clamps an over-tall panel with a max-height', () => {
+  const { top, maxHeight } = computeCyberHudTop({
+    viewportWidth: 1600,
+    viewportHeight: 500,
+    hudHeight: 900,
+    railRect: null,
+  });
+  assert.equal(top, 12);
+  assert.equal(maxHeight, 500 - 24);
+});
+
+test('computeCyberIntelPanelTop stacks below the HUD and stays on screen', () => {
+  assert.equal(
+    computeCyberIntelPanelTop({ viewportHeight: 900, hudTop: 332, hudHeight: 344 }),
+    332 + 344 + 12,
+  );
+  // Short viewport: keep at least the panel header visible.
+  const top = computeCyberIntelPanelTop({
+    viewportHeight: 500,
+    hudTop: 400,
+    hudHeight: 344,
+  });
+  assert.ok(top <= 500 - 96 && top >= 12);
+});
+
+test('rail style mutations re-dock the HUD without overlapping', () => {
+  // The rail's own layout pass moves it via inline style writes (a move, not
+  // a resize) — the HUD must follow those moves, not just resizes.
+  let railRect = { left: 1218, right: 1548, top: 234, bottom: 700, width: 330, height: 466 };
+  const rail = fakeElement('div');
+  rail.getBoundingClientRect = () => ({ ...railRect });
+  const vars = {};
+  const doc = fakeDocument();
+  doc.getElementById = (id) => (id === 'right-context-rail' ? rail : null);
+  doc.documentElement = {
+    style: {
+      setProperty: (k, v) => {
+        vars[k] = v;
+      },
+      removeProperty: (k) => {
+        delete vars[k];
+      },
+    },
+  };
+  const prevWindow = globalThis.window;
+  const prevMO = globalThis.MutationObserver;
+  const prevRO = globalThis.ResizeObserver;
+  const prevRAF = globalThis.requestAnimationFrame;
+  let mutationCallback = null;
+  globalThis.window = {
+    innerWidth: 1600,
+    innerHeight: 900,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  globalThis.MutationObserver = class {
+    constructor(cb) {
+      mutationCallback = cb;
+    }
+    observe() {}
+    disconnect() {}
+  };
+  globalThis.ResizeObserver = undefined;
+  globalThis.requestAnimationFrame = (fn) => {
+    fn();
+    return 1;
+  };
+  try {
+    withDocument(doc, () => {
+      const state = { enabled: true, stats: fakeStats() };
+      const manager = fakeManager(state);
+      const hud = new CyberIntelHud(manager);
+      hud.mount();
+      // Tall rail at 234..700: the 344px HUD docks below it, shrunk to fit.
+      assert.equal(vars['--cyber-hud-top'], '712px');
+      assert.equal(vars['--cyber-hud-max-height'], '176px');
+      assert.ok(mutationCallback, 'rail mutation observer installed');
+
+      // The rail's layout pass moves it (same size, new position).
+      railRect = { left: 1218, right: 1548, top: 100, bottom: 200, width: 330, height: 100 };
+      mutationCallback();
+      assert.equal(vars['--cyber-hud-top'], '212px');
+      assert.equal(vars['--cyber-hud-max-height'], undefined);
+
+      // Hiding the layer clears the stacking variables.
+      state.enabled = false;
+      manager.emit({ type: 'data-updated', layerId: 'cyber' });
+      assert.equal(vars['--cyber-hud-top'], undefined);
+      hud.destroy();
+    });
+  } finally {
+    if (prevWindow === undefined) delete globalThis.window;
+    else globalThis.window = prevWindow;
+    if (prevMO === undefined) delete globalThis.MutationObserver;
+    else globalThis.MutationObserver = prevMO;
+    if (prevRO === undefined) delete globalThis.ResizeObserver;
+    else globalThis.ResizeObserver = prevRO;
+    if (prevRAF === undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame = prevRAF;
+  }
 });

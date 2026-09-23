@@ -129,12 +129,16 @@ export function createCyberOverlayEntry({
   severity,
   dstCode,
   accent,
+  clusterCount = 0,
 }) {
+  const merged = Math.max(0, Math.floor(Number(clusterCount) || 0));
   return {
     id: String(id),
     position,
     variant: 'label',
-    title: `${String(type).toUpperCase()} → ${String(dstCode || '').toUpperCase()}`,
+    title:
+      `${String(type).toUpperCase()} → ${String(dstCode || '').toUpperCase()}` +
+      (merged > 0 ? ` +${merged}` : ''),
     accent,
     priority: Math.round(Number(severity) || 0) * 1000,
     collisionGroup: 'ambient-label',

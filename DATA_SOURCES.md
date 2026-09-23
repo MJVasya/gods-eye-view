@@ -96,6 +96,10 @@ Some layers render **procedurally generated data** instead of fetched feeds, so 
 | Source | Used for | License / terms | Attribution |
 | ------ | -------- | --------------- | ----------- |
 | **In-repo seeded cyber simulator** (`src/layers/cyber/simulator.js`) | Cyber Intel layer: simulated attack arcs between country hubs | Generated in-repo — **MIT**, same as the code. No third-party data involved | "Simulated feed" — **shown in-app**, required |
+| **Satellites fallback simulator** (`src/layers/satellites/simulator.js`) | Honest fallback when CelesTrak is unreachable: seeded synthetic TLE catalog (31 defs, real NORAD IDs, seeded orbital phasing); live is re-probed every 60s and resumes automatically | Generated in-repo — **MIT**. Satellite names/NORAD IDs are real identities; only the elements are synthetic | "FALLBACK · SIMULATED" chip + "Simulated (CelesTrak unreachable)" — **shown in-app**, required |
+| **Flights fallback simulator** (`src/layers/flights/simulator.js`) | Honest fallback when OpenSky/adsb.lol are unreachable: seeded deterministic route network (34 airport pairs); live re-probed every 60s | Generated in-repo — **MIT** | "FALLBACK · SIMULATED" chip; callsigns self-identify as `SIM####` — **shown in-app**, required |
+| **Military fallback simulator** (`src/layers/military/simulator.js`) | Honest fallback when the live military feed is unreachable: seeded military routes (AE-block hexes); live re-probed every 60s | Generated in-repo — **MIT** | "FALLBACK · SIMULATED" chip; callsigns self-identify as `SM###` — **shown in-app**, required |
+| **Vessels fallback simulator** (`src/layers/vessels/simulator.js`) | Honest fallback when no live AIS source is reachable (AISStream needs a key): seeded shipping-lane traffic; live re-probed every 60s | Generated in-repo — **MIT** | "FALLBACK · SIMULATED" chip; vessels labeled `SIM VESSEL ##` + "(SIMULATED)" — **shown in-app**, required |
 
 ### Notes on the simulated sources
 

@@ -386,3 +386,257 @@
   color: rgba(0, 255, 255, 0.45);
   text-transform: none;
 }
+
+/* ── phase-4c go-live prominence + error-state hardening ─────────────────
+   CSS-only prominence for the one-tap GO LIVE chip: larger, glowing and
+   gently pulsing while idle so the opt-in is discoverable; solid and still
+   when live. No app restyle — this only touches the cyber feed-mode chip.
+   Also the HUD attribution badge's live variant (cyan), mirroring the
+   click-to-inspect panel's .cyber-intel-badge-live. */
+
+@keyframes cyber-go-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.25);
+    border-color: rgba(0, 229, 255, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.6);
+    border-color: rgba(0, 229, 255, 0.9);
+  }
+}
+
+.data-toggle-controls [data-chip-id='cyber-feed-mode'] {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  padding: 5px 14px;
+  border-radius: 4px;
+  color: #00e5ff;
+  border-color: rgba(0, 229, 255, 0.55);
+  background: rgba(0, 229, 255, 0.08);
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.5);
+  animation: cyber-go-live-pulse 2.4s ease-in-out infinite;
+}
+
+.data-toggle-controls [data-chip-id='cyber-feed-mode']:hover,
+.data-toggle-controls [data-chip-id='cyber-feed-mode']:focus-visible {
+  color: #0a0a0f;
+  background: #00e5ff;
+  border-color: #00e5ff;
+  text-shadow: none;
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.65);
+  animation: none;
+}
+
+.data-toggle-controls [data-chip-id='cyber-feed-mode'].active {
+  animation: none;
+  color: #0a0a0f;
+  background: #00e5ff;
+  border-color: #00e5ff;
+  text-shadow: none;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-toggle-controls [data-chip-id='cyber-feed-mode'] {
+    animation: none;
+  }
+}
+
+/* HUD attribution badge: amber while simulated (base .cyber-hud-sim rule),
+   cyan while live — set by CyberIntelHud via the cyber-hud-live class. */
+.cyber-hud-sim.cyber-hud-live {
+  background: #00e5ff;
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.55);
+}
+
+/* ── phase-4e voice control ──────────────────────────────────────────────
+   Keyless Web Speech voice control: mic button + local persona picker.
+   Tactical-HUD language: monospace, uppercase, cyan glow on a dark
+   translucent field. The wrapper is position:fixed, so the mount anchor
+   (#command-dock, falling back to body) only decides DOM order. */
+
+.gev-voice {
+  position: fixed;
+  top: 64px;
+  right: 14px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: rgba(0, 255, 255, 0.75);
+  background: rgba(2, 10, 14, 0.72);
+  border: 1px solid rgba(0, 255, 255, 0.18);
+  user-select: none;
+}
+
+.gev-voice-mic {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  color: rgba(0, 255, 255, 0.85);
+  background: rgba(0, 40, 48, 0.6);
+  border: 1px solid rgba(0, 255, 255, 0.35);
+  border-radius: 50%;
+  text-shadow: 0 0 6px rgba(0, 255, 255, 0.5);
+}
+
+.gev-voice-mic:hover {
+  background: rgba(0, 60, 70, 0.75);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.35);
+}
+
+.gev-voice-mic:focus-visible {
+  outline: 2px solid rgba(0, 255, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.gev-voice-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
+/* Listening: breathing cyan pulse on the ring. */
+.gev-voice-mic[data-voice-state='listening'] {
+  color: #03181c;
+  background: #00e5ff;
+  border-color: #00e5ff;
+  text-shadow: none;
+  animation: gev-voice-pulse 1.4s ease-in-out infinite;
+}
+
+/* Working: warm amber while the command is parsed and dispatched. */
+.gev-voice-mic[data-voice-state='processing'] {
+  color: #ffd166;
+  border-color: rgba(255, 209, 102, 0.6);
+  text-shadow: 0 0 6px rgba(255, 209, 102, 0.5);
+}
+
+/* Mic trouble: red ring, still clickable to retry. */
+.gev-voice-mic[data-voice-state='error'] {
+  color: #ff6b6b;
+  border-color: rgba(255, 107, 107, 0.6);
+  text-shadow: 0 0 6px rgba(255, 107, 107, 0.5);
+}
+
+/* Unsupported browser: dimmed and inert — never a dead button. */
+.gev-voice-mic[data-voice-state='unsupported'],
+.gev-voice-mic[disabled] {
+  cursor: not-allowed;
+  color: rgba(140, 170, 175, 0.55);
+  background: rgba(20, 30, 34, 0.6);
+  border-color: rgba(140, 170, 175, 0.25);
+  text-shadow: none;
+  box-shadow: none;
+}
+
+@keyframes gev-voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(0, 229, 255, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0, 229, 255, 0.85);
+  }
+}
+
+.gev-voice-persona-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gev-voice-persona-caption {
+  color: rgba(0, 255, 255, 0.5);
+}
+
+.gev-voice-persona {
+  max-width: 132px;
+  padding: 4px 6px;
+  font: inherit;
+  color: rgba(0, 255, 255, 0.85);
+  background: rgba(0, 30, 36, 0.8);
+  border: 1px solid rgba(0, 255, 255, 0.25);
+  border-radius: 0;
+  text-transform: uppercase;
+}
+
+/* Honesty tag: personas are local, never an AI connection. */
+.gev-voice-local {
+  padding: 2px 5px;
+  color: #03181c;
+  background: rgba(0, 229, 255, 0.75);
+  font-size: 9px;
+  letter-spacing: 1.6px;
+}
+
+.gev-voice-caption {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  max-width: 260px;
+  padding: 6px 8px;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: none;
+  color: rgba(224, 255, 255, 0.9);
+  background: rgba(2, 10, 14, 0.85);
+  border: 1px solid rgba(0, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+.gev-voice-caption[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gev-voice-mic[data-voice-state='listening'] {
+    animation: none;
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.6);
+  }
+}
+
+/* ── phase-4a layout declutter ─────────────────────────────────────────
+   1) HUD/CONTEXT overlap: the HUD's static `top: 118px` collided with
+      #right-context-rail (whose top is computed at runtime). The HUD module
+      now measures the live rail rect and publishes --cyber-hud-top /
+      --cyber-intel-panel-top; these rules consume them with the original
+      static offsets as fallbacks, so the readout and the click-to-inspect
+      panel stack vertically and never overlap the CONTEXT panel — at any
+      viewport size, not just one breakpoint.
+   2) Stray white bar: the data-layer list's pale webkit scrollbar track read
+      as a stray white vertical bar at the DATA LAYERS panel's right edge.
+      The track wash is dropped; the thin cyan thumb (the real scroll
+      affordance) is untouched. */
+
+#cyber-intel-hud {
+  top: var(--cyber-hud-top, 118px);
+  max-height: var(--cyber-hud-max-height, calc(100vh - 130px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#cyber-intel-panel {
+  top: var(--cyber-intel-panel-top, 380px);
+  max-height: calc(100vh - var(--cyber-intel-panel-top, 380px) - 12px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+#data-panel .data-toggle-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+#data-panel .data-toggle-list {
+  /* Firefox track: keep the thumb, drop the pale track wash too. */
+  scrollbar-color: rgba(0, 212, 255, 0.5) transparent;
+}

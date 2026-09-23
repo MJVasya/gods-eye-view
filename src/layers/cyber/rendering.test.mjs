@@ -32,6 +32,8 @@ const {
   createEndpointMarkerEntity,
   createCyberEntities,
   resolveCyberPickEventId,
+  clusterLabelRecords,
+  CYBER_LABEL_CLUSTER_CELL_DEG,
 } = await import('./rendering.js');
 const { CYBER_MAX_ARCS } = await import('./model.js');
 
@@ -151,4 +153,80 @@ test('pick resolution accepts source markers and arcs only', () => {
   assert.equal(resolveCyberPickEventId(null), null);
   assert.equal(resolveCyberPickEventId(undefined), null);
   assert.equal(resolveCyberPickEventId({ id: 'cyber:src:' }), null);
+});
+
+test('clusterLabelRecords merges co-located destinations, winner first', () => {
+  const rows = [
+    attack('low', {
+      severity: 2,
+      dst: endpoint('GB', 'United Kingdom', 51.5, -0.12),
+    }),
+    attack('high', {
+      severity: 5,
+      ts: 1758550009999,
+      dst: endpoint('GB', 'United Kingdom', 51.51, -0.11),
+    }),
+    attack('far', {
+      severity: 5,
+      dst: endpoint('DE', 'Germany', 52.52, 13.4),
+    }),
+  ];
+  const clusters = clusterLabelRecords(rows);
+  assert.equal(clusters.length, 2);
+  // Highest severity wins the London cell and folds the weaker attack in.
+  assert.equal(clusters[0].record.id, 'high');
+  assert.equal(clusters[0].suppressed, 1);
+  assert.equal(clusters[1].record.id, 'far');
+  assert.equal(clusters[1].suppressed, 0);
+});
+
+test('clusterLabelRecords keeps distinct nearby metros apart', () => {
+  const rows = [
+    attack('london', { dst: endpoint('GB', 'United Kingdom', 51.5, -0.12) }),
+    attack('paris', { dst: endpoint('FR', 'France', 48.85, 2.35) }),
+  ];
+  const clusters = clusterLabelRecords(rows);
+  assert.equal(clusters.length, 2);
+  assert.deepEqual(
+    clusters.map((c) => c.suppressed),
+    [0, 0],
+  );
+});
+
+test('clusterLabelRecords honors limit and handles bad input', () => {
+  const rows = [
+    attack('a', { dst: endpoint('GB', 'United Kingdom', 51.5, -0.12) }),
+    attack('b', { dst: endpoint('DE', 'Germany', 52.52, 13.4) }),
+    attack('c', { dst: endpoint('FR', 'France', 48.85, 2.35) }),
+  ];
+  assert.equal(clusterLabelRecords(rows, { limit: 2 }).length, 2);
+  assert.deepEqual(clusterLabelRecords([]), []);
+  assert.deepEqual(clusterLabelRecords(null), []);
+  assert.deepEqual(clusterLabelRecords(rows, { limit: 0 }), []);
+  // Records without a usable destination never merge into a cell.
+  const missing = [
+    attack('x', { dst: { code: 'GB', country: 'United Kingdom' } }),
+    attack('y', { dst: { code: 'GB', country: 'United Kingdom' } }),
+  ];
+  assert.equal(clusterLabelRecords(missing).length, 2);
+});
+
+test('clusterLabelRecords tie-breaks by recency then stable id', () => {
+  const at = (id, ts) =>
+    attack(id, {
+      severity: 3,
+      ts,
+      dst: endpoint('GB', 'United Kingdom', 51.5, -0.12),
+    });
+  const clusters = clusterLabelRecords([at('older', 1000), at('newer', 2000)]);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].record.id, 'newer');
+  assert.equal(clusters[0].suppressed, 1);
+});
+
+test('label cluster cell default is a sane metro-scale radius', () => {
+  assert.ok(
+    CYBER_LABEL_CLUSTER_CELL_DEG > 0 && CYBER_LABEL_CLUSTER_CELL_DEG <= 5,
+    `cell ${CYBER_LABEL_CLUSTER_CELL_DEG} should merge a metro, not a country`,
+  );
 });

@@ -763,7 +763,10 @@ export function createQueries({
       const described = _describeFlight(flightState._trackedIcao);
       if (!described) return null;
       const { position, ...rest } = described;
-      return rest;
+      // Seam for the cockpit HUD (owned elsewhere): lets it render
+      // SIMULATED TRACK instead of LIVE TRACK while the seeded fallback feeds
+      // this layer. See the parent report for the exact integration snippet.
+      return { ...rest, simulated: flightState.feed._simulated === true };
     },
 
     /**
@@ -797,6 +800,11 @@ export function createQueries({
             Math.ceil((flightState.feed._retryAt - Date.now()) / 1000),
           )
         : 0;
+      // While the seeded simulator is serving traffic, the chip must read
+      // FALLBACK · SIMULATED — never present synthetic tracks as live
+      // adsb.lol data. The explicit fallback/mode flags drive the amber chip
+      // via layerFeedState().
+      const simulated = flightState.feed._simulated === true;
       return {
         count: flightState.feed._count,
         lastUpdate: flightState.feed._lastUpdate,
@@ -805,7 +813,9 @@ export function createQueries({
         status: flightState.feed._lastStatus,
         retryInSec,
         source: flightState.feed._lastSource,
-        fallback: false,
+        coverage: flightState.feed._lastCoverage,
+        fallback: simulated,
+        mode: simulated ? 'sim' : 'live',
       };
     },
   };

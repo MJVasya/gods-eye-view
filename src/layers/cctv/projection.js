@@ -194,6 +194,10 @@ export function createProjection({
       lastImageRefreshAt: 0,
       imageReady: false,
       imageLoading: false,
+      // Deadline armed by refreshProjectionImage (frames.js); cleared on
+      // load/error here and on runtime teardown. Releasing the latch on
+      // timeout keeps a stalled request from wedging all future refreshes.
+      imageTimeout: null,
       imageStamp: 0,
       drawnImageStamp: -1,
       // Signature of the pixels currently ON the canvas, plus the reused 64x36
@@ -228,12 +232,20 @@ export function createProjection({
       const img = new Image();
       img.decoding = 'async';
       img.crossOrigin = 'anonymous';
+      const clearImageTimeout = () => {
+        if (runtime.imageTimeout) {
+          clearTimeout(runtime.imageTimeout);
+          runtime.imageTimeout = null;
+        }
+      };
       img.onload = () => {
+        clearImageTimeout();
         runtime.imageLoading = false;
         runtime.imageReady = true;
         runtime.imageStamp = Date.now();
       };
       img.onerror = () => {
+        clearImageTimeout();
         runtime.imageLoading = false;
         runtime.imageReady = false;
       };
@@ -288,6 +300,10 @@ export function createProjection({
 
   function destroyProjectionRuntime(runtime) {
     if (!runtime) return;
+    if (runtime.imageTimeout) {
+      clearTimeout(runtime.imageTimeout);
+      runtime.imageTimeout = null;
+    }
     if (runtime.video) {
       runtime.video.pause();
       runtime.video.removeAttribute('src');

@@ -9,6 +9,7 @@ import { createInteraction } from './interaction.js';
 import { createLifecycle } from './lifecycle.js';
 import { createIngestion } from './ingestion.js';
 import { createState } from './state.js';
+import { withSimulatedFallback } from './simulator.js';
 
 /** Construct one layer with its own scene state and supplied application services. */
 export function createSatellitesLayer({ services, source }) {
@@ -16,7 +17,9 @@ export function createSatellitesLayer({ services, source }) {
     throw new TypeError('A satellites source is required');
   const state = createState({ services });
   const parts = {};
-  const context = { state, services, parts, source };
+  // The decorator tries CelesTrak first and serves the seeded simulated
+  // catalog (honestly labeled) only while the live source is failing.
+  const context = { state, services, parts, source: withSimulatedFallback(source) };
   parts.controls = createControls(context);
   parts.catalog = createCatalog(context);
   parts.labels = createLabels(context);

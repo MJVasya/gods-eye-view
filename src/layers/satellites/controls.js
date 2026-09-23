@@ -536,17 +536,32 @@ export function createControls({ state: layerState, services, parts, source }) {
     },
 
     getStats() {
+      // While the seeded simulator is serving the catalog, the chip must read
+      // FALLBACK · SIMULATED — never present synthetic elements as CelesTrak
+      // data. `error` stays null so the panel's error branch can't hijack the
+      // fallback line, and the outage reason travels in `loadingLabel`.
+      const simulated = layerState._simulated === true;
       return {
         count: layerState._count,
         lastUpdate: layerState._lastUpdate,
         stale: false,
-        status:
-          layerState._lastError === 'CelesTrak unreachable'
+        status: simulated
+          ? 'fallback'
+          : layerState._lastError === 'CelesTrak unreachable'
             ? 'unavailable'
             : layerState._lastError
               ? 'degraded'
               : 'nominal',
-        error: layerState._lastError,
+        error: simulated ? null : layerState._lastError,
+        fallback: simulated,
+        mode: simulated ? 'sim' : 'live',
+        source: simulated ? 'SIMULATED' : 'CelesTrak',
+        loadingLabel: simulated
+          ? 'CelesTrak unavailable · seeded orbital elements'
+          : undefined,
+        coverage: simulated
+          ? 'CelesTrak unavailable · seeded orbital elements'
+          : undefined,
       };
     },
   };

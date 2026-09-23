@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
 import { PLANE_MODEL_URL } from './policy.js';
+import { withSimulatedFallback } from './simulator.js';
 
 export function createLifecycle({
   flightState,
@@ -26,7 +27,7 @@ export function createLifecycle({
         throw new Error('Configure the source before layer initialization');
       if (typeof source?.getSnapshot !== 'function')
         throw new TypeError('A snapshot source is required');
-      flightState.feed._source = source;
+      flightState.feed._source = withSimulatedFallback(source);
       flightState.feed._lastSource =
         source.label || flightState.feed._lastSource;
       this.source = flightState.feed._lastSource;
@@ -91,6 +92,8 @@ export function createLifecycle({
       flightState.feed._retryAt = 0;
       flightState.feed._lastError = null;
       flightState.feed._lastStatus = null;
+      flightState.feed._simulated = false;
+      flightState.feed._fallbackReason = null;
       flightState.feed._lastSource =
         flightState.feed._source.label || 'Aircraft';
       flightState.feed._lastCoverage = 'worldwide upstream snapshot';
