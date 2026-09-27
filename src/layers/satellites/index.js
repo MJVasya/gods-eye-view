@@ -8,6 +8,7 @@ import { createTesting } from './testing.js';
 import { createInteraction } from './interaction.js';
 import { createLifecycle } from './lifecycle.js';
 import { createIngestion } from './ingestion.js';
+import { createRecords } from './records.js';
 import { createState } from './state.js';
 import { withSimulatedFallback } from './simulator.js';
 
@@ -24,6 +25,7 @@ export function createSatellitesLayer({ services, source }) {
   parts.catalog = createCatalog(context);
   parts.labels = createLabels(context);
   parts.orbits = createOrbits(context);
+  parts.records = createRecords(context);
   parts.rendering = createRendering(context);
   parts.tracking = createTracking(context);
   parts.testing = createTesting(context);
@@ -66,6 +68,9 @@ export function createSatellitesLayer({ services, source }) {
       applySatellitePointFocusDeemphasis:
         parts.rendering.applySatellitePointFocusDeemphasis,
       getNextIssPass: parts.orbits.getNextIssPass,
+      getNextSatellitePass: parts.orbits.getNextSatellitePass,
+      resolveSatelliteForPass: parts.orbits.resolveSatelliteForPass,
+      getAnalystRecords: parts.records.getAnalystRecords,
       scoreSatelliteNameMatch: parts.orbits.scoreSatelliteNameMatch,
       findSatelliteOrbitTrackInTle: parts.orbits.findSatelliteOrbitTrackInTle,
       getSatelliteOrbitTrack: parts.orbits.getSatelliteOrbitTrack,
