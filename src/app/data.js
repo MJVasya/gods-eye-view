@@ -1,5 +1,6 @@
 import { LayerLifecycle } from '../data/lifecycle.js';
 import { LayerPresentation } from './layerPresentation.js';
+import { createCyberSonarScene } from '../cyberSonarScene.js';
 import { CyberIntelHud } from './cyberIntelHud.js';
 import { buildAppVoiceActions, createVoiceControl } from '../ui/voiceControl.js';
 import {
@@ -26,7 +27,9 @@ export function createApplicationData({
         `Data layers could not be destroyed: ${[...dataManager.layers.keys()].join(', ')}`,
       );
   });
-  const presentation = new LayerPresentation(dataManager);
+  const presentation = new LayerPresentation(dataManager, {
+    weatherClock: catalog?.weatherClock,
+  });
   defer(() => presentation.destroy());
   // Tactical stats readout for the Cyber Intel layer. It owns its DOM, hides
   // itself while the layer is disabled, and re-renders on the layer's update
@@ -106,6 +109,7 @@ export function createApplicationData({
   }
   presentation.mount(document.getElementById('data-toggles'));
   styleManager.attachDataManager(dataManager);
+  defer(createCyberSonarScene(viewer, dataManager));
 
   return { dataManager, catalog, presentation };
 }

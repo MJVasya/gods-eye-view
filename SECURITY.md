@@ -62,9 +62,11 @@ browser-key fallback for existing single-key setups.
 The data proxies under `server/providers/` are written so the browser cannot turn the server into an open relay:
 
 - **No arbitrary-URL fetching.** The CCTV frame proxy fetches only server-registered camera/frame URLs — clients cannot pass an upstream URL to fetch (SSRF mitigation). Other proxies target fixed upstream hosts.
+- **Live HLS is bounded and origin-pinned.** Registered HTTP(S) HLS sources use a Node puller that rejects redirects and off-origin playlist references, bounds playlists and segment bodies while streaming, and aborts timed-out or released sessions. At most two sessions retain 12 segments/24 MiB each, plus bounded download buffers. Stores are memory-only and idle sessions expire after 15 seconds. RTMP/ffmpeg execution is not enabled. Locally configured source URLs remain an operator trust boundary.
 - **Radio is not an audio relay.** `/api/radio/stations` contacts only allowlisted Radio Browser HTTPS hosts and paths, rejects redirects, rejects any hostname with a loopback/private/link-local/metadata/non-public A or AAAA result, and pins each TLS connection to a validated address. It returns normalized public HTTPS stream URLs; `/api/radio/click/:uuid` applies the same destination policy and accepts only station IDs from the current bounded catalog. The browser then connects directly to the broadcaster after an explicit playback action, so the broadcaster sees the listener's IP address. GEV never proxies, caches, records, or redistributes audio.
 - **No verbatim client headers upstream.** The CCTV media route is the one route that relays a request header (`Range`, for video seeking). It is parsed and canonicalized before it is forwarded: one `bytes=` range only, with every accepted form — explicit span, open-ended and suffix — bounded to the same 64 MiB ceiling the relay applies to a declared response body. Multi-range, malformed, inverted and non-`bytes` values are dropped and the request proceeds without a `Range`, as RFC 7233 §3.1 prescribes. Bounding the request bounds what is asked for: a response that declares no length — live streamed media, or a chunked body from an upstream that ignores the `Range` — has no ceiling. An upstream request the browser has stopped waiting for is cancelled rather than left running, whether the viewer leaves before the headers arrive or during the body.
 - **Transit fetches registered feeds only.** `/api/transit/vehicles/<id>` resolves the id against `src/data/transitFeeds.js`; the browser never supplies a URL, and a feed that is registered but disabled does not resolve at all. Redirects are followed manually and each hop is validated against the feed's own https origin before it is requested, so an off-origin or downgraded hop is refused rather than contacted. Bodies are capped at 8 MB, the protobuf is decoded server-side under entity-count and string-length ceilings, a differential feed is refused, and snapshots live 15 s in memory with no disk cache. A per-feed admission limiter and a failure cooldown ladder bound what this process can ask of any operator.
+- **Local receiver feeds are operator-configured and local-only.** `/api/local-receivers/aircraft` reads only the `aircraft.json` URLs in the server's `LOCAL_RECEIVER_FEEDS`; the browser never supplies an address. Each host must pass the shared tap address rule (`src/data/tapAddress.js`: loopback, RFC1918, `localhost`, `*.local`; no link-local, IPv6 or other names), the scheme must be http(s), the path must end in `aircraft.json`, and credentials, queries and fragments are refused. Invalid entries are logged at startup and never fetched. Reads use a 2 s timeout, refuse redirects, cap bodies at 2 MB and share one read per second; responses name each feed by band only and never carry upstream error text.
 - **Response-size caps and timeouts** on proxied responses.
 - **Sanitized errors** — internal error details are not echoed back to clients.
 - **Coalesced OAuth refresh** and cached successful responses only (OpenSky).
@@ -87,27 +89,6 @@ The dev server is a **key broker**: every server-side key above is spendable by 
   sharing value is therefore discarded rather than honored, and GEV starts on
   loopback only. Use a separately reviewed authentication proxy for remote
   access and keep provider-side quotas as the spend backstop.
-
-
-## Localhost MCP (presentation control)
-
-v0 adds an optional **localhost-only** Model Context Protocol server
-(`tools/mcp-server`) so chat agents can drive camera / layers / scenes in a
-running browser tab. This is a **dedicated control channel**, not an extension
-of the `/api/*` data proxies (those remain data-only and cannot move the camera).
-
-| Control | Default | Notes |
-| --- | --- | --- |
-| Bind | `127.0.0.1` | **Hard-fail** in code if `GEV_MCP_HOST` is `0.0.0.0` / non-loopback — not docs-only |
-| Auth | Bearer `GEV_MCP_TOKEN` | **Default-on.** If unset, a token is generated into gitignored `.gev-mcp-token`. Treat the token as required for any future LAN/multi-user experiment (LAN bind remains unsupported) |
-| CORS | Deny-by-default | Preflight refused; no `Access-Control-Allow-*` |
-| Bridge | Loopback WebSocket `/gev-bridge` | Server refuses non-loopback peers; the browser client (`?gevMcpBridge=` / `__GEV_MCP_BRIDGE_URL__`) **only accepts** `ws(s)://127.0.0.1`, `::1`, or `localhost` URLs and ignores anything else |
-| Secrets | Never via tools | Tools do not read `.env`, key values, or provider credentials; responses redact secret-shaped fields |
-| Presentation profile | Excludes CCTV/ALPR | `set_layer_visibility` / related UI refuse `cctv` and `alpr-cameras` (and `cctv-panel`) by default |
-
-**LAN opt-in warning:** Do **not** set `GEV_MCP_HOST=0.0.0.0`. The process refuses that bind. Exposing MCP beyond loopback would let other machines move the live globe session. There is no supported LAN mode in v0.
-
-Deferred MCP tools (not registered): `control_cctv`, `control_radio`, annotations, `analyst_query`, `next_iss_pass`. See [docs/MCP.md](docs/MCP.md) and [tools/mcp-server/README.md](tools/mcp-server/README.md).
 
 ## Scope & expectations
 
