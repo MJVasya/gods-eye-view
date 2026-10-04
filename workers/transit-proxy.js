@@ -12,13 +12,18 @@
  *
  * All feeds are keyless, openly licensed GTFS-Realtime (see
  * src/data/transitFeeds.js). 15 s per-feed cache, backoff on failure.
+ *
+ * NOTE: the service is created lazily on first request, not at module
+ * scope — its constructor starts a setInterval sweeper, and Workers
+ * forbid timers in global scope.
  */
 import { createTransitService } from '../src/sources/transitService.js';
 
-const service = createTransitService();
+let service = null;
 
 export async function handleTransitRequest(request) {
   try {
+    if (!service) service = createTransitService();
     return await service.handle({ url: request.url, method: request.method });
   } catch {
     return new Response(JSON.stringify({ error: 'transit_unavailable' }), {
