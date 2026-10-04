@@ -453,7 +453,7 @@ export function createWeatherShell({
     time,
     mode,
     signal,
-    { box = null, keep = [], onFetched } = {},
+    { box = null, keep = [], onFetched, via } = {},
   ) {
     signal.throwIfAborted();
     const key = cacheKey(time, mode, box);
@@ -466,6 +466,7 @@ export function createWeatherShell({
     const result = await acquireWeatherImage(product, time, {
       signal,
       mode,
+      via,
       size: box ? detailSize : size,
       bbox: box,
       maxBytes: MAX_IMAGE_BYTES,
@@ -562,6 +563,7 @@ export function createWeatherShell({
     job.timeout = setTimeout(() => job.controller.abort(), timeoutMs);
     void acquire(current.time, current.infrared, job.controller.signal, {
       box: view,
+      via: current.via ?? undefined,
     })
       .then(({ texture }) => installDetail(job, texture))
       .catch(() => failDetail(job));
@@ -650,6 +652,7 @@ export function createWeatherShell({
       time: frame.time,
       product: frame.product,
       infrared: frame.infrared,
+      via: frame.snapshot.via ?? null,
       bounds: frame.bounds,
       extent: { west, south, east, north },
       key: frame.key,
@@ -735,8 +738,17 @@ export function createWeatherShell({
         job.timeout = setTimeout(() => job.controller.abort(), timeoutMs);
         // Both images at once: one after the other would outlast playback's step.
         await Promise.all([
-          acquire(time, mode, signal, { keep: box ? [key] : [] }),
-          box ? acquire(time, mode, signal, { box, keep: [coarse] }) : null,
+          acquire(time, mode, signal, {
+            keep: box ? [key] : [],
+            via: snapshot.via ?? undefined,
+          }),
+          box
+            ? acquire(time, mode, signal, {
+                box,
+                keep: [coarse],
+                via: snapshot.via ?? undefined,
+              })
+            : null,
         ]);
         signal.throwIfAborted();
         if (prefetchJob === job) prefetchedKey = key;
@@ -794,6 +806,7 @@ export function createWeatherShell({
       watch(frame, signal);
       frame.timeout = setTimeout(() => fail(frame), timeoutMs);
       void acquire(time, mode, frame.controller.signal, {
+        via: frame.snapshot.via ?? undefined,
         onFetched: () => {
           frame.mosaic.fetched = true;
         },

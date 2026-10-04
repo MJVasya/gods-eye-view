@@ -55,15 +55,19 @@ export const WEATHER_IMAGE_SIZES = Object.freeze({
 export const WEATHER_DETAIL_SIZE = Object.freeze({ width: 4096, height: 2048 });
 
 /** A whole-extent image, or with `bbox` ({ west, south, east, north } degrees)
- * a detail window of the same product. */
+ * a detail window of the same product. `via` pins a fallback source named by
+ * the manifest (e.g. 'iem'); the worker allowlists it, so no client-supplied
+ * destinations are possible. */
 export function weatherImageUrl(
   product,
   time,
   { width, height } = {},
   bbox = null,
+  { via } = {},
 ) {
   if (!WEATHER_PRODUCTS.includes(product) || !Number.isFinite(Date.parse(time)))
     throw new Error('Invalid weather frame');
+  const viaQuery = via === undefined ? '' : `&via=${viaParam(via)}`;
   let box = '';
   if (bbox !== null) {
     const edges = [bbox.west, bbox.south, bbox.east, bbox.north];
@@ -88,16 +92,23 @@ export function weatherImageUrl(
     // The largest size is the proxy default: one frame has one URL.
     if (width !== largest.width) size = `&size=${width}x${height}`;
   }
-  return `/api/weather/image?product=${product}&time=${encodeURIComponent(time)}${box}${size}`;
+  return `/api/weather/image?product=${product}&time=${encodeURIComponent(time)}${viaQuery}${box}${size}`;
 }
 
-export function weatherTileUrl(product, time, { size } = {}) {
+function viaParam(via) {
+  if (typeof via !== 'string' || !/^[a-z0-9-]{1,16}$/.test(via))
+    throw new Error('Invalid weather source');
+  return via;
+}
+
+export function weatherTileUrl(product, time, { size, via } = {}) {
   if (!WEATHER_PRODUCTS.includes(product) || !Number.isFinite(Date.parse(time)))
     throw new Error('Invalid weather frame');
   if (size !== undefined && ![256, 512, 1024].includes(size))
     throw new Error('Invalid weather tile size');
+  const viaQuery = via === undefined ? '' : `&via=${viaParam(via)}`;
   // Construct locally; never accept a manifest-provided host or template.
-  return `/api/weather/tile?product=${product}&time=${encodeURIComponent(time)}&z={z}&x={x}&y={y}${size === undefined ? '' : `&size=${size}`}`;
+  return `/api/weather/tile?product=${product}&time=${encodeURIComponent(time)}${viaQuery}&z={z}&x={x}&y={y}${size === undefined ? '' : `&size=${size}`}`;
 }
 
 /** Acquisition is lazy and shares the application's existing source contract. */

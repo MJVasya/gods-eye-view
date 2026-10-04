@@ -91,6 +91,7 @@ function createGlobeRendering({
     const scheme = new cesium.GeographicTilingScheme();
     const template = weatherTileUrl(snapshot.product, time, {
       size: profile(snapshot.product).tileSize,
+      via: snapshot.via ?? undefined,
     });
     const urls = [];
     for (let z = 0; z <= 1; z++) {
@@ -355,6 +356,7 @@ function createGlobeRendering({
           : new cesium.UrlTemplateImageryProvider({
               url: weatherTileUrl(snapshot.product, time, {
                 size: nextProfile.tileSize,
+                via: snapshot.via ?? undefined,
               }),
               tilingScheme,
               rectangle,

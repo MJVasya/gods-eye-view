@@ -1,16 +1,41 @@
-import { readResponseTextCapped } from './common/http.js';
+/**
+ * Tropical cyclone advisory proxy for Cloudflare Workers / Pages `_worker.js`.
+ *
+ * Serves `GET /api/cyclones` — a worker port of the Vite dev-server
+ * middleware in `server/providers/cyclones.js`, so cyclone advisories work
+ * on the deployed Cloudflare Pages app, where the dev middleware does not
+ * exist.
+ *
+ * Sources (all keyless, no signup):
+ *   - NHC CurrentStorms.json (active storm list + advisory metadata)
+ *   - NHC tropical MapServer (forecast points, track lines, cones) via
+ *     mapservices.weather.noaa.gov ArcGIS REST (GeoJSON)
+ *
+ * The pure parsers below are a verbatim port of the dev middleware's
+ * validation logic; only the I/O shell is worker-specific. Response shape is
+ * identical to the dev route so `src/layers/cyclones/source.js` needs no
+ * changes.
+ *
+ * Workers-safe: no node: imports, no fs, no Buffer, no process.env.
+ * Upstream fetches are capped and timed out; the assembled snapshot is
+ * cached at the edge (5 min fresh, 12 h stale-while-revalidate).
+ */
 
 const STATUS_URL = 'https://www.nhc.noaa.gov/CurrentStorms.json';
 const GIS =
   'https://mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather_summary/MapServer';
 const HOUR = 3600_000;
-const COVERAGE =
-  'Atlantic and eastern/central North Pacific; not worldwide cyclone coverage.';
+const FETCH_TIMEOUT_MS = 10_000;
+const FRESH_MS = 300_000;
+const STALE_MS = 12 * HOUR;
+const USER_AGENT = 'Gods Eye View (public NOAA weather context)';
 const LAYERS = [
   { id: 5, cap: 512 * 1024, count: 500, kind: 'points' },
   { id: 6, cap: 512 * 1024, count: 32, kind: 'track' },
   { id: 7, cap: 2 * 1024 * 1024, count: 32, kind: 'cone' },
 ];
+const COVERAGE =
+  'Atlantic and eastern/central North Pacific; not worldwide cyclone coverage.';
 
 function invalid() {
   return new Error('invalid_cyclone_data');
@@ -250,170 +275,190 @@ export function attachCycloneGeometry(storms, collections) {
   });
 }
 
-/** Fixed official endpoints; one shared bounded refresh, no user destinations. */
-export function cycloneProxy({
-  fetchImpl = fetch,
-  now = () => Date.now(),
-  timeoutMs = 12_000,
-} = {}) {
-  let cache = null;
-  let operation = null;
-  let attemptedAt = -Infinity;
-  async function upstream(url, cap, signal) {
-    signal.throwIfAborted();
-    const response = await fetchImpl(url, {
-      signal,
+async function readTextCapped(response, maxBytes) {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    try {
+      await response.body?.cancel();
+    } catch {
+      /* no-op */
+    }
+    throw new Error('cyclone_upstream_too_large');
+  }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes)
+      throw new Error('cyclone_upstream_too_large');
+    return text;
+  }
+  const decoder = new TextDecoder();
+  let out = '';
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* no-op */
+      }
+      throw new Error('cyclone_upstream_too_large');
+    }
+    out += decoder.decode(value, { stream: true });
+  }
+  return out + decoder.decode();
+}
+
+async function upstreamJson(url, cap) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
       redirect: 'error',
       headers: {
         Accept: 'application/geo+json,application/json',
-        'User-Agent': 'Gods Eye View (public NOAA weather context)',
+        'User-Agent': USER_AGENT,
       },
     });
     if (!response.ok) {
-      await response.body?.cancel();
+      try {
+        await response.body?.cancel();
+      } catch {
+        /* no-op */
+      }
       throw new Error('cyclone_upstream_unavailable');
     }
-    const result = JSON.parse(
-      await readResponseTextCapped(response, cap, signal),
-    );
-    signal.throwIfAborted();
-    return result;
+    return JSON.parse(await readTextCapped(response, cap));
+  } finally {
+    clearTimeout(timer);
   }
-  async function refresh(signal) {
-    let storms = parseCycloneStatus(
-      await upstream(STATUS_URL, 128 * 1024, signal),
-      now(),
-    );
-    if (storms.length) {
-      try {
-        const results = await Promise.allSettled(
-          LAYERS.map(async (spec) => {
-            const url = new URL(`${GIS}/${spec.id}/query`);
-            url.search = new URLSearchParams({
-              where: '1=1',
-              outFields:
-                spec.kind === 'points'
-                  ? 'idp_source,advisnum,tau,maxwind,gust'
-                  : 'idp_source,advisnum',
-              outSR: '4326',
-              resultRecordCount: String(spec.count),
-              geometryPrecision: '4',
-              f: 'geojson',
-            }).toString();
-            return upstream(url.href, spec.cap, signal);
-          }),
-        );
-        if (results.some((result) => result.status === 'rejected'))
-          throw invalid();
-        storms = attachCycloneGeometry(
-          storms,
-          results.map((result) => result.value),
-        );
-      } catch {
-        storms = storms.map((storm) => ({
-          ...storm,
-          geometryStatus: 'unavailable',
-        }));
-      }
-    }
-    signal.throwIfAborted();
-    cache = { storms, fetchedAt: now() };
-    return cache;
-  }
-  async function acquire(signal) {
-    signal.throwIfAborted();
-    if (cache && now() - cache.fetchedAt < 300_000) return cache;
-    if (operation?.controller.signal.aborted) operation = null;
-    if (!operation) {
-      if (now() - attemptedAt < 60_000) throw new Error('cyclone_retry_later');
-      attemptedAt = now();
-      const controller = new AbortController();
-      const owned = { controller, waiters: 0 };
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      owned.promise = refresh(controller.signal).finally(() => {
-        clearTimeout(timer);
-        if (operation === owned) operation = null;
-      });
-      operation = owned;
-    }
-    const owned = operation;
-    if (owned.waiters >= 32)
-      throw Object.assign(new Error('cyclone_busy'), { status: 429 });
-    owned.waiters++;
-    let abort;
-    const cancelled = new Promise((_, reject) => {
-      abort = () => reject(signal.reason ?? new Error('cancelled'));
-      signal.addEventListener('abort', abort, { once: true });
-    });
+}
+
+async function refreshSnapshot(nowMs) {
+  let storms = parseCycloneStatus(
+    await upstreamJson(STATUS_URL, 128 * 1024),
+    nowMs,
+  );
+  if (storms.length) {
     try {
-      return await Promise.race([owned.promise, cancelled]);
-    } finally {
-      signal.removeEventListener('abort', abort);
-      if (--owned.waiters === 0 && operation === owned) {
-        owned.controller.abort();
-        if (signal.aborted) attemptedAt = -Infinity;
-      }
+      const results = await Promise.allSettled(
+        LAYERS.map(async (spec) => {
+          const url = new URL(`${GIS}/${spec.id}/query`);
+          url.search = new URLSearchParams({
+            where: '1=1',
+            outFields:
+              spec.kind === 'points'
+                ? 'idp_source,advisnum,tau,maxwind,gust'
+                : 'idp_source,advisnum',
+            outSR: '4326',
+            resultRecordCount: String(spec.count),
+            geometryPrecision: '4',
+            f: 'geojson',
+          }).toString();
+          return upstreamJson(url.href, spec.cap);
+        }),
+      );
+      if (results.some((result) => result.status === 'rejected'))
+        throw invalid();
+      storms = attachCycloneGeometry(
+        storms,
+        results.map((result) => result.value),
+      );
+    } catch {
+      storms = storms.map((storm) => ({
+        ...storm,
+        geometryStatus: 'unavailable',
+      }));
     }
   }
-  function describe(value, stale = false) {
-    return {
-      schemaVersion: 1,
-      source: 'NOAA NHC / CPHC',
-      attribution:
-        'NOAA/NWS National Hurricane Center / Central Pacific Hurricane Center',
-      coverage: COVERAGE,
-      fetchedAt: value?.fetchedAt ?? null,
-      stale: stale || !value,
-      unavailable: !value,
-      reason: !value
-        ? 'Cyclone data unavailable'
-        : stale
-          ? 'Cached cyclone advisory; upstream unavailable'
-          : null,
-      storms: value?.storms ?? [],
-    };
-  }
-  async function handler(req, res) {
-    const controller = new AbortController();
-    const close = () => controller.abort();
-    res.once?.('close', close);
-    const json = (status, value) => {
-      if (controller.signal.aborted) return;
-      res.writeHead(status, {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-store',
-        ...(status === 429 ? { 'Retry-After': '2' } : {}),
-      });
-      res.end(JSON.stringify(value));
-    };
-    try {
-      if (req.method !== 'GET')
-        return json(405, { error: 'method_not_allowed' });
-      if (req.url !== '/' && req.url !== '')
-        return json(400, { error: 'invalid_cyclone_query' });
-      try {
-        json(200, describe(await acquire(controller.signal)));
-      } catch (error) {
-        if (error.status === 429) return json(429, { error: 'cyclone_busy' });
-        const usable =
-          cache &&
-          now() - cache.fetchedAt <= 12 * HOUR &&
-          cache.storms.every(
-            (storm) => now() - Date.parse(storm.issuedAt) <= 12 * HOUR,
-          );
-        json(200, describe(usable ? cache : null, true));
-      }
-    } finally {
-      res.removeListener?.('close', close);
-    }
-  }
+  return { storms, fetchedAt: nowMs };
+}
+
+function describe(value, stale = false) {
   return {
-    name: 'cyclones',
-    configureServer({ middlewares }) {
-      middlewares.use('/api/cyclones', handler);
-    },
-    configurePreviewServer({ middlewares }) {
-      middlewares.use('/api/cyclones', handler);
-    },
+    schemaVersion: 1,
+    source: 'NOAA NHC / CPHC',
+    attribution:
+      'NOAA/NWS National Hurricane Center / Central Pacific Hurricane Center',
+    coverage: COVERAGE,
+    fetchedAt: value?.fetchedAt ?? null,
+    stale: stale || !value,
+    unavailable: !value,
+    reason: !value
+      ? 'Cyclone data unavailable'
+      : stale
+        ? 'Cached cyclone advisory; upstream unavailable'
+        : null,
+    storms: value?.storms ?? [],
   };
+}
+
+function jsonResponse(value, status = 200) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': status === 200 ? 'public, max-age=60' : 'no-store',
+    },
+  });
+}
+
+/**
+ * Handle GET /api/cyclones — shared by the Pages `_worker.js`.
+ * `ctx.waitUntil` finishes the edge-cache write after responding.
+ */
+export async function handleCycloneRequest(request, ctx) {
+  const url = new URL(request.url);
+  if (request.method !== 'GET')
+    return jsonResponse({ error: 'method_not_allowed' }, 405);
+  const path = url.pathname.replace(/^\/api\/cyclones/, '') || '/';
+  if (path !== '/' || url.search)
+    return jsonResponse({ error: 'invalid_cyclone_query' }, 400);
+  const cache = caches.default;
+  const cacheKey = new Request(`${url.origin}/api/cyclones`, { method: 'GET' });
+  const nowMs = Date.now();
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    try {
+      const payload = await cached.json();
+      if (
+        Number.isFinite(payload?.fetchedAt) &&
+        nowMs - payload.fetchedAt < FRESH_MS
+      )
+        return jsonResponse(describe(payload));
+    } catch {
+      /* fall through to refresh */
+    }
+  }
+  try {
+    const snapshot = await refreshSnapshot(nowMs);
+    const response = jsonResponse(describe(snapshot));
+    const put = cache.put(cacheKey, response.clone()).catch(() => {});
+    if (ctx?.waitUntil) ctx.waitUntil(put);
+    else await put.catch(() => {});
+    return response;
+  } catch {
+    // Serve a stale snapshot (<= 12 h, advisories still current) before
+    // admitting defeat — matches the dev middleware's honesty contract.
+    if (cached) {
+      try {
+        const payload = await cached.json();
+        const usable =
+          Number.isFinite(payload?.fetchedAt) &&
+          nowMs - payload.fetchedAt <= STALE_MS &&
+          Array.isArray(payload?.storms) &&
+          payload.storms.every(
+            (storm) => nowMs - Date.parse(storm.issuedAt) <= STALE_MS,
+          );
+        if (usable) return jsonResponse(describe(payload, true));
+      } catch {
+        /* fall through */
+      }
+    }
+    return jsonResponse(describe(null));
+  }
 }

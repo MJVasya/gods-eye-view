@@ -68,6 +68,7 @@ export async function acquireWeatherImage(
     mode,
     size,
     bbox = null,
+    via,
     maxBytes,
     createCanvas,
     fetchImpl,
@@ -76,9 +77,12 @@ export async function acquireWeatherImage(
     onFetched = () => {},
   },
 ) {
-  const response = await fetchImpl(weatherImageUrl(product, time, size, bbox), {
-    signal,
-  });
+  const response = await fetchImpl(
+    weatherImageUrl(product, time, size, bbox, { via }),
+    {
+      signal,
+    },
+  );
   if (!response.ok) throw new Error(`Weather HTTP ${response.status}`);
   const bytes = await readResponseBytesCapped(response, maxBytes);
   signal.throwIfAborted();
