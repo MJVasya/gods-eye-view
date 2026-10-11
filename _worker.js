@@ -26,6 +26,7 @@ import { handleRadioRequest } from './workers/radio-proxy.js';
 import { handleMiscRequest } from './workers/misc-proxy.js';
 import { handleTransitRequest } from './workers/transit-proxy.js';
 import { handleKeyedRequest } from './workers/keyed-proxy.js';
+import { handleHealthRequest } from './workers/health-proxy.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -106,6 +107,9 @@ export default {
       url.pathname.startsWith('/api/openai/')
     ) {
       return handleKeyedRequest(request, env, ctx);
+    }
+    if (url.pathname === '/api/health') {
+      return handleHealthRequest(request, env);
     }
     return env.ASSETS.fetch(request);
   },
