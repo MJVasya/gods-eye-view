@@ -9,7 +9,7 @@
  * No secrets are echoed. Response is JSON, no-store.
  */
 
-const VERSION = '2026-10-10-diag1';
+const VERSION = '2026-10-10-diag2';
 
 async function probe(name, url, { timeoutMs = 8000, expectJson = false } = {}) {
   const controller = new AbortController();
@@ -24,10 +24,45 @@ async function probe(name, url, { timeoutMs = 8000, expectJson = false } = {}) {
     // For health we only care about reachability, not 2xx.
     return { name, ok: res.status < 500, status: res.status, ms: Date.now() - started };
   } catch (e) {
-    return { name, ok: false, error: e?.name || 'fetch_failed', ms: Date.now() - started };
+    return { name, ok: false, error: `${e?.name}: ${e?.message || 'no message'}`, ms: Date.now() - started };
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchVariants() {
+  const results = {};
+  const url = 'https://example.com/';
+  // Variant 1: bare fetch, no options
+  try {
+    const r = await fetch(url);
+    results.bare = `ok ${r.status}`;
+  } catch (e) {
+    results.bare = `${e?.name}: ${e?.message || 'no message'}`;
+  }
+  // Variant 2: with User-Agent header
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'test/1.0' } });
+    results.withUA = `ok ${r.status}`;
+  } catch (e) {
+    results.withUA = `${e?.name}: ${e?.message || 'no message'}`;
+  }
+  // Variant 3: with AbortSignal
+  try {
+    const c = new AbortController();
+    const r = await fetch(url, { signal: c.signal });
+    results.withSignal = `ok ${r.status}`;
+  } catch (e) {
+    results.withSignal = `${e?.name}: ${e?.message || 'no message'}`;
+  }
+  // Variant 4: with redirect:error
+  try {
+    const r = await fetch(url, { redirect: 'error' });
+    results.withRedirect = `ok ${r.status}`;
+  } catch (e) {
+    results.withRedirect = `${e?.name}: ${e?.message || 'no message'}`;
+  }
+  return results;
 }
 
 export async function handleHealthRequest(request, env) {
@@ -61,6 +96,7 @@ export async function handleHealthRequest(request, env) {
     version: VERSION,
     now: new Date().toISOString(),
     secrets,
+    fetchVariants: await fetchVariants(),
     upstreams: probes,
   }, null, 2), {
     status: 200,
