@@ -63,7 +63,7 @@ async function upstreamText(url, { cap, method = 'GET', body = null, headers = {
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
-      method, body, signal: controller.signal, redirect: 'error',
+      method, body, signal: controller.signal, redirect: 'manual',
       headers: { 'User-Agent': USER_AGENT, ...headers },
     });
     if (!response.ok) {
@@ -83,7 +83,7 @@ async function upstreamBytes(url, { cap, headers = {} } = {}) {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const response = await fetch(url, {
-      signal: controller.signal, redirect: 'error',
+      signal: controller.signal, redirect: 'manual',
       headers: { 'User-Agent': USER_AGENT, ...headers },
     });
     if (!response.ok) {

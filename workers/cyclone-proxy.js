@@ -318,7 +318,7 @@ async function upstreamJson(url, cap) {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Accept: 'application/geo+json,application/json',
         'User-Agent': USER_AGENT,

@@ -153,7 +153,7 @@ async function upstreamJson(url, cap, accept = 'application/json') {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: { Accept: accept, 'User-Agent': USER_AGENT },
     });
     if (!response.ok) {

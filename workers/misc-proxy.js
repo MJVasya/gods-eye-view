@@ -60,7 +60,7 @@ async function upstreamText(url, { cap, method = 'GET', body = null, headers = {
       method,
       body,
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: { 'User-Agent': USER_AGENT, ...headers },
     });
     if (!response.ok) {

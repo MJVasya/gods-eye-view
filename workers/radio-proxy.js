@@ -122,7 +122,7 @@ async function mirrorFetch(path, { method = 'GET', cap = DIRECTORY_CAP } = {}) {
       const response = await fetch(mirror + path, {
         method,
         signal: controller.signal,
-        redirect: 'error',
+        redirect: 'manual',
         headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
       });
       if (!response.ok) {

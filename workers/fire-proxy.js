@@ -164,7 +164,7 @@ async function upstream(url, cap, { method = 'GET', body = null, timeoutMs = FET
       method,
       body,
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Accept: 'application/json',
         'User-Agent': USER_AGENT,
@@ -222,7 +222,7 @@ async function fetchPublicationTimes(id) {
       url.hash = '';
       response = await fetch(url.href, {
         signal: controller.signal,
-        redirect: 'error',
+        redirect: 'manual',
         headers: { 'User-Agent': USER_AGENT },
       });
     }

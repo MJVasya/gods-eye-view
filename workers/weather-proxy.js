@@ -425,7 +425,7 @@ async function upstreamGet(url, { accept, signal } = {}) {
   try {
     const response = await fetch(url, {
       signal: signal ?? t.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Accept: accept ?? 'application/xml,text/xml',
         'User-Agent': USER_AGENT,

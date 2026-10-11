@@ -18,7 +18,7 @@ async function probe(name, url, { timeoutMs = 8000, expectJson = false } = {}) {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      redirect: 'error',
+      redirect: 'manual',
       headers: { 'User-Agent': 'gods-eye-view-health/1.0', Accept: expectJson ? 'application/json' : '*/*' },
     });
     // For health we only care about reachability, not 2xx.
@@ -57,7 +57,7 @@ async function fetchVariants() {
   }
   // Variant 4: with redirect:error
   try {
-    const r = await fetch(url, { redirect: 'error' });
+    const r = await fetch(url, { redirect: 'manual' });
     results.withRedirect = `ok ${r.status}`;
   } catch (e) {
     results.withRedirect = `${e?.name}: ${e?.message || 'no message'}`;
